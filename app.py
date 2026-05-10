@@ -22,7 +22,14 @@ from analysis import channel as ch_mod
 from analysis import emoji_stats as emoji_mod
 from analysis import graph as graph_mod
 from analysis import latency as latency_mod
-from analysis import loader, overview, render as render_mod, words as words_mod
+from analysis import media as media_mod
+from analysis import (
+    loader,
+    overview,
+    render as render_mod,
+    speaking as speaking_mod,
+    words as words_mod,
+)
 
 st.set_page_config(
     page_title="TelAnalysis",
@@ -85,6 +92,21 @@ def _emojis(cache_key: str, _messages: list):
 @st.cache_data(show_spinner="Computing reply latency…")
 def _latency(cache_key: str, _messages: list):
     return latency_mod.compute(_messages)
+
+
+@st.cache_data(show_spinner="Counting media…")
+def _media(cache_key: str, _messages: list):
+    return media_mod.analyze(_messages)
+
+
+@st.cache_data(show_spinner="Profiling speaking style…")
+def _speaking(cache_key: str, _messages: list):
+    return speaking_mod.analyze(_messages)
+
+
+@st.cache_data(show_spinner="Filtering by date…")
+def _filter_by_date(cache_key: str, _messages: list, from_d: str, to_d: str):
+    return overview.filter_by_date(_messages, from_d, to_d)
 
 
 def _calendar_heatmap_fig(df: pd.DataFrame) -> go.Figure | None:
@@ -223,18 +245,53 @@ with st.sidebar:
         chat = filtered[idx]
 
     st.divider()
+
+    # Date range filter
+    bounds = overview.date_bounds(chat.messages)
+    if bounds is not None:
+        import datetime as _dt
+
+        min_d = _dt.date.fromisoformat(bounds[0])
+        max_d = _dt.date.fromisoformat(bounds[1])
+        date_range = st.date_input(
+            "Date range",
+            value=(min_d, max_d),
+            min_value=min_d,
+            max_value=max_d,
+            help="Limits all analysis to this period.",
+        )
+        if isinstance(date_range, (list, tuple)) and len(date_range) == 2:
+            from_d, to_d = date_range[0].isoformat(), date_range[1].isoformat()
+        else:
+            from_d, to_d = bounds
+        is_filtered = (from_d, to_d) != bounds
+    else:
+        from_d, to_d = "0000-01-01", "9999-12-31"
+        is_filtered = False
+
     most_com = st.slider("Top words to show", 10, 200, 30, step=5)
     st.caption(f"Chat ID: `{chat.id}`")
 
-# Cache key — change identity when chat changes so caches invalidate
-cache_key = f"{json_path}::{chat.id}::{chat.type}"
+# Cache key — change identity when chat or date range changes so caches invalidate
+cache_key = f"{json_path}::{chat.id}::{chat.type}::{from_d}::{to_d}"
 sections = loader.sections_for_type(chat.type)
+
+# Filter messages once and pass everywhere
+if is_filtered:
+    messages = _filter_by_date(cache_key, chat.messages, from_d, to_d)
+else:
+    messages = chat.messages
 
 st.title(chat.name)
 st.caption(f"Type: `{chat.type}` · ID: `{chat.id}`")
+if is_filtered:
+    st.info(
+        f"📅 Filtered: {from_d} → {to_d} "
+        f"({len(messages):,} of {len(chat.messages):,} messages)"
+    )
 
-# KPI row
-kpis = _kpis(cache_key, chat.messages)
+# KPI row (computed on filtered set)
+kpis = _kpis(cache_key, messages)
 k1, k2, k3, k4, k5 = st.columns(5)
 k1.metric("Total messages", f"{kpis.total_messages:,}")
 k2.metric("Unique users", f"{kpis.unique_users:,}")
@@ -245,7 +302,7 @@ if kpis.first_date and kpis.last_date:
     st.caption(f"📅 {kpis.first_date} → {kpis.last_date}")
 
 if kpis.total_messages == 0:
-    st.warning("This chat has no messages.")
+    st.warning("No messages in selected range.")
     st.stop()
 
 # Build the tab list dynamically based on chat type
@@ -260,6 +317,8 @@ if "channel" in sections:
     tab_specs.append(("📺 Channel", "channel"))
 if "perusers" in sections:
     tab_specs.append(("👤 Per-user", "perusers"))
+if "highlights" in sections:
+    tab_specs.append(("✨ Highlights", "highlights"))
 
 tabs = st.tabs([t[0] for t in tab_specs])
 
@@ -267,7 +326,7 @@ for tab, (_, key) in zip(tabs, tab_specs):
     with tab:
         if key == "overview":
             t0 = time.time()
-            per_day = _per_day(cache_key, chat.messages)
+            per_day = _per_day(cache_key, messages)
             if per_day:
                 df = pd.DataFrame(per_day, columns=["date", "messages"])
                 df["date"] = pd.to_datetime(df["date"])
@@ -289,7 +348,7 @@ for tab, (_, key) in zip(tabs, tab_specs):
                 st.info("No dated messages.")
 
             # Hour × weekday heatmap
-            grid = _hour_weekday(cache_key, chat.messages)
+            grid = _hour_weekday(cache_key, messages)
             if any(any(row) for row in grid):
                 weekdays = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
                 hours = list(range(24))
@@ -312,7 +371,64 @@ for tab, (_, key) in zip(tabs, tab_specs):
                 )
                 st.plotly_chart(heat, use_container_width=True)
 
-            participants = _participants(cache_key, chat.messages)
+            # Active-hours overlap (only for 1-1 chats)
+            user_hours = overview.hour_distribution_per_user(messages)
+            if len(user_hours) == 2:
+                (uid_a, (name_a, hrs_a)), (uid_b, (name_b, hrs_b)) = list(
+                    user_hours.items()
+                )
+                # Normalise per user (so heavy texters don't dominate)
+                total_a = sum(hrs_a) or 1
+                total_b = sum(hrs_b) or 1
+                norm_a = [h / total_a for h in hrs_a]
+                norm_b = [h / total_b for h in hrs_b]
+                overlap = [min(a, b) for a, b in zip(norm_a, norm_b)]
+
+                fig_ovl = go.Figure()
+                fig_ovl.add_trace(
+                    go.Bar(
+                        x=list(range(24)),
+                        y=norm_a,
+                        name=name_a,
+                        marker_color="rgba(91,143,249,0.6)",
+                    )
+                )
+                fig_ovl.add_trace(
+                    go.Bar(
+                        x=list(range(24)),
+                        y=norm_b,
+                        name=name_b,
+                        marker_color="rgba(232,100,82,0.6)",
+                    )
+                )
+                fig_ovl.add_trace(
+                    go.Bar(
+                        x=list(range(24)),
+                        y=overlap,
+                        name="overlap (both active)",
+                        marker_color="rgba(90,216,166,0.95)",
+                    )
+                )
+                fig_ovl.update_layout(
+                    title="Active-hours overlap (normalised)",
+                    template="plotly_dark",
+                    height=320,
+                    margin=dict(l=0, r=0, t=40, b=0),
+                    xaxis=dict(title="hour", dtick=2),
+                    yaxis=dict(title="share of own messages"),
+                    barmode="overlay",
+                    legend=dict(orientation="h"),
+                )
+                st.plotly_chart(fig_ovl, use_container_width=True)
+                peak_overlap = max(range(24), key=lambda i: overlap[i])
+                st.caption(
+                    f"Peak overlap hour: **{peak_overlap}:00** "
+                    f"(both write the most around this time). "
+                    f"Bars normalised per-user — fair comparison even when "
+                    f"one user texts more overall."
+                )
+
+            participants = _participants(cache_key, messages)
             if participants:
                 st.subheader(f"Participants ({len(participants):,})")
                 p_df = pd.DataFrame(
@@ -327,7 +443,7 @@ for tab, (_, key) in zip(tabs, tab_specs):
                 )
 
             # Top emojis (chat-wide)
-            es = _emojis(cache_key, chat.messages)
+            es = _emojis(cache_key, messages)
             if es.chat_top:
                 with st.expander(
                     f"😄 Top emojis · {es.total_emojis:,} total in "
@@ -349,8 +465,74 @@ for tab, (_, key) in zip(tabs, tab_specs):
                         height=300,
                     )
 
+            # Media / voice / links breakdown
+            ms = _media(cache_key, messages)
+            if ms.by_kind:
+                voice_min = ms.voice_total_seconds // 60
+                voice_label = (
+                    f"📦 Media · {sum(ms.by_kind.values()):,} msgs · "
+                    f"{ms.voice_count:,} voice ({media_mod.humanize_duration(ms.voice_total_seconds)}) · "
+                    f"{ms.total_links:,} links"
+                )
+                with st.expander(voice_label):
+                    # Pie chart of message kinds
+                    pie_df = pd.DataFrame(
+                        [
+                            {"kind": media_mod.kind_label(k), "count": v}
+                            for k, v in sorted(ms.by_kind.items(), key=lambda x: -x[1])
+                        ]
+                    )
+                    fig_pie = px.pie(
+                        pie_df,
+                        names="kind",
+                        values="count",
+                        template="plotly_dark",
+                        title="Message types",
+                    )
+                    fig_pie.update_layout(height=350, margin=dict(l=0, r=0, t=40, b=0))
+                    fig_pie.update_traces(
+                        textposition="inside", textinfo="percent+label"
+                    )
+                    st.plotly_chart(fig_pie, use_container_width=True)
+
+                    if ms.voice_count:
+                        vc1, vc2, vc3 = st.columns(3)
+                        vc1.metric("Voice messages", f"{ms.voice_count:,}")
+                        vc2.metric(
+                            "Voice total",
+                            media_mod.humanize_duration(ms.voice_total_seconds),
+                        )
+                        avg = (
+                            ms.voice_total_seconds // ms.voice_count
+                            if ms.voice_count
+                            else 0
+                        )
+                        vc3.metric("Voice avg", media_mod.humanize_duration(avg))
+
+                    if ms.top_domains:
+                        st.subheader(f"🔗 Top domains ({ms.total_links:,} links total)")
+                        dom_df = pd.DataFrame(
+                            ms.top_domains, columns=["domain", "count"]
+                        )
+                        fig_dom = px.bar(
+                            dom_df.head(20),
+                            x="domain",
+                            y="count",
+                            template="plotly_dark",
+                        )
+                        fig_dom.update_layout(
+                            height=320, margin=dict(l=0, r=0, t=10, b=0)
+                        )
+                        st.plotly_chart(fig_dom, use_container_width=True)
+                        st.dataframe(
+                            dom_df,
+                            use_container_width=True,
+                            hide_index=True,
+                            height=300,
+                        )
+
             # Reply latency (chat-wide)
-            lat = _latency(cache_key, chat.messages)
+            lat = _latency(cache_key, messages)
             if lat.overall_seconds:
                 with st.expander(
                     f"⏱️ Reply latency · median "
@@ -376,7 +558,7 @@ for tab, (_, key) in zip(tabs, tab_specs):
 
         elif key == "graph":
             t0 = time.time()
-            g = _graph_data(cache_key, chat.messages)
+            g = _graph_data(cache_key, messages)
             cgraph1, cgraph2 = st.columns(2)
             cgraph1.metric("Nodes", f"{len(g.nodes):,}")
             cgraph2.metric("Edges", f"{len(g.edges):,}")
@@ -385,7 +567,7 @@ for tab, (_, key) in zip(tabs, tab_specs):
                 st.info("No participants found in this chat (only service events?).")
             else:
                 # Interaction summary (always useful)
-                summary = graph_mod.interaction_summary(chat.messages)
+                summary = graph_mod.interaction_summary(messages)
                 if summary:
                     sdf = pd.DataFrame(summary)
                     sdf_chart = sdf.melt(
@@ -457,7 +639,7 @@ for tab, (_, key) in zip(tabs, tab_specs):
 
         elif key == "words":
             t0 = time.time()
-            res = _words(cache_key, chat.messages, most_com)
+            res = _words(cache_key, messages, most_com)
 
             cwords1, cwords2, cwords3 = st.columns(3)
             cwords1.metric("Users analysed", f"{len(res.users):,}")
@@ -483,10 +665,218 @@ for tab, (_, key) in zip(tabs, tab_specs):
                 st.dataframe(
                     top_df, use_container_width=True, hide_index=True, height=300
                 )
+                if res.sentiment_available:
+                    sarcasm_note = (
+                        f" · {res.sarcasm_marked:,} fragments halved by sarcasm-emoji heuristic (🙃🤡🙄💀…)"
+                        if res.sarcasm_marked
+                        else ""
+                    )
+                    st.caption(
+                        f"Average sentiment "
+                        f"(rubert-tiny2-russian-sentiment, RU/EN): "
+                        f"{res.chat_avg_sentiment:+.3f} "
+                        f"(range −1 negative … +1 positive){sarcasm_note}. "
+                        f"⚠ Не понимает сарказм, шутки и слэнг — числа берите со скепсисом."
+                    )
+                else:
+                    st.info(
+                        "💡 Sentiment analysis is **disabled** — install optional "
+                        "deps to enable RU/EN sentiment scores:\n\n"
+                        "```\npip install -r requirements-sentiment.txt\n```\n\n"
+                        "Adds ~1GB (torch + transformers) plus a 50MB model on "
+                        "first use. Restart Streamlit after install. "
+                        "⚠ Модель не выкупает сарказм, шутки и слэнг — это curiosity-фича, не диагностика."
+                    )
+
+            # Sentiment over time (chat-wide + per-user)
+            if res.sentiment_available and res.dated_scores:
+                with st.expander("📊 Sentiment over time"):
+                    series_chat = words_mod.sentiment_period_series(
+                        res.dated_scores, granularity="week", per_user=False
+                    )
+                    if series_chat:
+                        s_df = pd.DataFrame(series_chat)
+                        s_df["period"] = pd.to_datetime(s_df["period"])
+                        fig_chat = px.line(
+                            s_df,
+                            x="period",
+                            y="avg",
+                            template="plotly_dark",
+                            markers=True,
+                            title="Chat-wide weekly average sentiment",
+                        )
+                        fig_chat.add_hline(y=0, line_dash="dot", line_color="gray")
+                        fig_chat.update_layout(
+                            height=320,
+                            margin=dict(l=0, r=0, t=40, b=0),
+                            yaxis_title="avg compound",
+                        )
+                        st.plotly_chart(fig_chat, use_container_width=True)
+
+                    # per-user overlay if 2+ users
+                    if len(res.users) >= 2:
+                        per_u = words_mod.sentiment_period_series(
+                            res.dated_scores, granularity="week", per_user=True
+                        )
+                        if per_u:
+                            u_df = pd.DataFrame(per_u)
+                            u_df["period"] = pd.to_datetime(u_df["period"])
+                            u_df["user"] = u_df["user_id"].map(
+                                lambda uid: (
+                                    res.users.get(uid).name
+                                    if res.users.get(uid)
+                                    else uid
+                                )
+                            )
+                            fig_u = px.line(
+                                u_df,
+                                x="period",
+                                y="avg",
+                                color="user",
+                                template="plotly_dark",
+                                markers=True,
+                                title="Per-user weekly average sentiment",
+                            )
+                            fig_u.add_hline(y=0, line_dash="dot", line_color="gray")
+                            fig_u.update_layout(
+                                height=380,
+                                margin=dict(l=0, r=0, t=40, b=0),
+                                yaxis_title="avg compound",
+                                legend_title="",
+                            )
+                            st.plotly_chart(fig_u, use_container_width=True)
+                    st.caption(
+                        "⚠ Sentiment не выкупает сарказм, шутки и слэнг. "
+                        "Используй для тренда, не для абсолютных значений."
+                    )
+
+            # Extreme messages drill-down
+            if res.sentiment_available and res.users:
+                st.subheader("🎯 Extreme messages")
+                # Build a flat list of (text, sentiment, user_name)
+                all_msgs = []
+                for u in res.users.values():
+                    for txt, s in u.messages:
+                        if isinstance(s, float) and txt and abs(s) > 0.05:
+                            all_msgs.append((txt, s, u.name))
+                if all_msgs:
+                    extr_n = st.slider(
+                        "How many extremes to show",
+                        5,
+                        50,
+                        10,
+                        step=5,
+                        key="extr_n",
+                    )
+                    most_pos = sorted(all_msgs, key=lambda r: -r[1])[:extr_n]
+                    most_neg = sorted(all_msgs, key=lambda r: r[1])[:extr_n]
+                    ec1, ec2 = st.columns(2)
+                    with ec1:
+                        st.caption(f"💚 Most positive ({extr_n})")
+                        st.dataframe(
+                            pd.DataFrame(
+                                most_pos, columns=["text", "sentiment", "user"]
+                            ),
+                            use_container_width=True,
+                            hide_index=True,
+                            height=400,
+                        )
+                    with ec2:
+                        st.caption(f"💔 Most negative ({extr_n})")
+                        st.dataframe(
+                            pd.DataFrame(
+                                most_neg, columns=["text", "sentiment", "user"]
+                            ),
+                            use_container_width=True,
+                            hide_index=True,
+                            height=400,
+                        )
+
+            # Word trend over time
+            st.subheader("📈 Word usage over time")
+            term_input = st.text_input(
+                "Words to track (comma-separated)",
+                placeholder="например: привет, спасибо, люблю",
+                key="word_trend_input",
+            )
+            if term_input.strip():
+                terms = [t.strip() for t in term_input.split(",") if t.strip()]
+                granularity = st.radio(
+                    "Granularity",
+                    ["week", "day", "month"],
+                    index=0,
+                    horizontal=True,
+                    key="word_trend_gran",
+                )
+                with st.spinner("Counting…"):
+                    trends = words_mod.word_timeline(
+                        messages, terms, granularity=granularity
+                    )
+                series_rows = []
+                for term, series in trends.items():
+                    for date_iso, count in series:
+                        series_rows.append(
+                            {"date": date_iso, "count": count, "term": term}
+                        )
+                if series_rows:
+                    tdf = pd.DataFrame(series_rows)
+                    tdf["date"] = pd.to_datetime(tdf["date"])
+                    fig_tr = px.line(
+                        tdf,
+                        x="date",
+                        y="count",
+                        color="term",
+                        template="plotly_dark",
+                        markers=True,
+                    )
+                    fig_tr.update_layout(
+                        height=380,
+                        margin=dict(l=0, r=0, t=10, b=0),
+                        legend_title="",
+                    )
+                    st.plotly_chart(fig_tr, use_container_width=True)
+                    totals = (
+                        tdf.groupby("term")["count"]
+                        .sum()
+                        .reset_index()
+                        .sort_values("count", ascending=False)
+                    )
+                    st.dataframe(
+                        totals,
+                        use_container_width=True,
+                        hide_index=True,
+                        height=200,
+                    )
+                else:
+                    st.caption("No matches.")
+
+            # Vocabulary richness (TTR)
+            if res.users and any(u.total_tokens > 0 for u in res.users.values()):
+                st.subheader("🧠 Vocabulary richness")
+                voc_rows = [
+                    {
+                        "user": u.name,
+                        "total_tokens": u.total_tokens,
+                        "unique_tokens": u.unique_tokens,
+                        "TTR": round(u.ttr, 3),
+                    }
+                    for u in res.users.values()
+                    if u.total_tokens > 0
+                ]
+                voc_df = pd.DataFrame(voc_rows).sort_values(
+                    "total_tokens", ascending=False
+                )
                 st.caption(
-                    f"Average sentiment (VADER, English-only): "
-                    f"{res.chat_avg_sentiment:+.2f}. "
-                    f"For Russian text expect ~0.0 — see TODO."
+                    "TTR = unique / total tokens (after stop-word filtering). "
+                    "Higher = more diverse vocabulary. "
+                    "TTR is length-sensitive — shorter samples score higher; "
+                    "compare users with similar token counts."
+                )
+                st.dataframe(
+                    voc_df,
+                    use_container_width=True,
+                    hide_index=True,
+                    height=240,
                 )
 
             if res.users:
@@ -507,7 +897,11 @@ for tab, (_, key) in zip(tabs, tab_specs):
                             st.image(u_wc, caption=f"Wordcloud — {pick.name}")
                     cu1, cu2 = st.columns(2)
                     with cu1:
-                        st.caption(f"Average sentiment: {pick.avg_sentiment:+.2f}")
+                        if res.sentiment_available:
+                            st.caption(
+                                f"Average sentiment: {pick.avg_sentiment:+.2f} "
+                                f"⚠ не учитывает сарказм/шутки/слэнг"
+                            )
                         if pick.top_words:
                             tw = pd.DataFrame(pick.top_words, columns=["word", "count"])
                             st.dataframe(
@@ -517,10 +911,16 @@ for tab, (_, key) in zip(tabs, tab_specs):
                                 height=300,
                             )
                     with cu2:
-                        m_df = pd.DataFrame(
-                            pick.messages,
-                            columns=["text", "sentiment"],
-                        )
+                        if res.sentiment_available:
+                            m_df = pd.DataFrame(
+                                pick.messages,
+                                columns=["text", "sentiment"],
+                            )
+                        else:
+                            m_df = pd.DataFrame(
+                                [(t,) for t, _ in pick.messages],
+                                columns=["text"],
+                            )
                         st.caption(f"All {len(m_df):,} message fragments")
                         st.dataframe(
                             m_df,
@@ -549,7 +949,7 @@ for tab, (_, key) in zip(tabs, tab_specs):
 
         elif key == "channel":
             t0 = time.time()
-            res = _channel(cache_key, chat.messages, most_com)
+            res = _channel(cache_key, messages, most_com)
             cc1, cc2 = st.columns(2)
             cc1.metric("Top words", f"{len(res.top_words):,}")
             cc2.metric("Tokens (raw)", f"{res.token_count:,}")
@@ -577,7 +977,7 @@ for tab, (_, key) in zip(tabs, tab_specs):
 
         elif key == "perusers":
             t0 = time.time()
-            participants = _participants(cache_key, chat.messages)
+            participants = _participants(cache_key, messages)
             if not participants:
                 st.info("No identifiable participants in this chat.")
             else:
@@ -596,7 +996,7 @@ for tab, (_, key) in zip(tabs, tab_specs):
                 # Filter messages by this user once
                 user_msgs = [
                     m
-                    for m in chat.messages
+                    for m in messages
                     if isinstance(m, dict)
                     and (m.get("from_id") == user_id or m.get("actor_id") == user_id)
                 ]
@@ -608,6 +1008,42 @@ for tab, (_, key) in zip(tabs, tab_specs):
                     "Share of chat",
                     f"{100 * user_msg_count / max(kpis.total_messages, 1):.1f}%",
                 )
+
+                # Speaking style
+                speak = _speaking(cache_key, messages)
+                style = speak.get(user_id)
+                if style is not None:
+                    st.subheader("✍️ Speaking style")
+                    s1, s2, s3, s4 = st.columns(4)
+                    s1.metric("Avg msg length", f"{style.avg_chars:.0f} chars")
+                    s2.metric("Avg words/msg", f"{style.avg_words:.1f}")
+                    s3.metric("Median chars", f"{style.median_chars:,}")
+                    s4.metric("Longest", f"{style.longest_chars:,} chars")
+                    s5, s6, s7 = st.columns(3)
+                    s5.metric(
+                        "Question rate",
+                        f"{style.question_ratio * 100:.1f}%",
+                        help="Share of messages containing '?'",
+                    )
+                    s6.metric(
+                        "Exclamation rate",
+                        f"{style.exclamation_ratio * 100:.1f}%",
+                        help="Share of messages containing '!'",
+                    )
+                    s7.metric(
+                        "ALL-CAPS rate",
+                        f"{style.caps_ratio * 100:.1f}%",
+                        help="Share of messages where >60% of letters are uppercase (≥5 letters)",
+                    )
+                    if style.longest_text:
+                        with st.expander(
+                            f"📜 Longest message ({style.longest_chars:,} chars)"
+                        ):
+                            st.text(style.longest_text[:5000])
+                            if len(style.longest_text) > 5000:
+                                st.caption(
+                                    f"… (truncated, full length {style.longest_chars:,})"
+                                )
 
                 # Daily timeline
                 pu_per_day = overview.messages_per_day(user_msgs)
@@ -652,7 +1088,7 @@ for tab, (_, key) in zip(tabs, tab_specs):
 
                 # Top emojis for this user
                 with col_a:
-                    es = _emojis(cache_key, chat.messages)
+                    es = _emojis(cache_key, messages)
                     user_emo = es.per_user.get(user_id, [])
                     st.subheader("😄 Top emojis")
                     if user_emo:
@@ -668,7 +1104,7 @@ for tab, (_, key) in zip(tabs, tab_specs):
 
                 # Reply latency for this user (responder)
                 with col_b:
-                    lat = _latency(cache_key, chat.messages)
+                    lat = _latency(cache_key, messages)
                     user_lats = lat.per_user_seconds.get(user_id, [])
                     st.subheader("⏱️ Reply latency")
                     if user_lats:
@@ -697,8 +1133,18 @@ for tab, (_, key) in zip(tabs, tab_specs):
                         st.caption("No replies recorded for this user.")
 
                 # Top words for this user (reuse words analyzer)
-                wres = _words(cache_key, chat.messages, most_com)
+                wres = _words(cache_key, messages, most_com)
                 user_stat = wres.users.get(user_id)
+                if user_stat and user_stat.total_tokens > 0:
+                    vk1, vk2, vk3 = st.columns(3)
+                    vk1.metric("Total tokens", f"{user_stat.total_tokens:,}")
+                    vk2.metric("Unique tokens", f"{user_stat.unique_tokens:,}")
+                    vk3.metric(
+                        "TTR (diversity)",
+                        f"{user_stat.ttr:.3f}",
+                        help="Type-token ratio. 1.0 = every word is unique. "
+                        "Length-sensitive: shorter samples score higher.",
+                    )
                 if user_stat and user_stat.top_words:
                     st.subheader(f"💬 Top {len(user_stat.top_words)} words")
                     u_wc = render_mod.wordcloud_png(user_stat.top_words)
@@ -711,4 +1157,158 @@ for tab, (_, key) in zip(tabs, tab_specs):
                         hide_index=True,
                         height=300,
                     )
+
+                # Per-user extreme messages
+                if user_stat and wres.sentiment_available and user_stat.messages:
+                    user_msgs_scored = [
+                        (txt, s)
+                        for txt, s in user_stat.messages
+                        if isinstance(s, float) and txt and abs(s) > 0.05
+                    ]
+                    if user_msgs_scored:
+                        st.subheader(f"🎯 {user_name}'s extreme messages")
+                        u_extr_n = st.slider(
+                            "How many",
+                            5,
+                            30,
+                            10,
+                            step=5,
+                            key=f"extr_pu_{user_id}",
+                        )
+                        u_pos = sorted(user_msgs_scored, key=lambda r: -r[1])[:u_extr_n]
+                        u_neg = sorted(user_msgs_scored, key=lambda r: r[1])[:u_extr_n]
+                        e1, e2 = st.columns(2)
+                        with e1:
+                            st.caption(f"💚 {user_name}'s most positive")
+                            st.dataframe(
+                                pd.DataFrame(u_pos, columns=["text", "sentiment"]),
+                                use_container_width=True,
+                                hide_index=True,
+                                height=320,
+                            )
+                        with e2:
+                            st.caption(f"💔 {user_name}'s most negative")
+                            st.dataframe(
+                                pd.DataFrame(u_neg, columns=["text", "sentiment"]),
+                                use_container_width=True,
+                                hide_index=True,
+                                height=320,
+                            )
+            st.caption(f"Rendered in {time.time() - t0:.1f}s")
+
+        elif key == "highlights":
+            t0 = time.time()
+            st.subheader(
+                f"✨ {chat.name} — highlights"
+                + (f" · {from_d} → {to_d}" if is_filtered else "")
+            )
+
+            # Big KPIs at the top
+            h1, h2, h3, h4 = st.columns(4)
+            h1.metric("Messages", f"{kpis.total_messages:,}")
+            h2.metric("Days active", f"{kpis.days_active:,}")
+            ms_h = _media(cache_key, messages)
+            voice_total_min = ms_h.voice_total_seconds // 60
+            h3.metric(
+                "Voice talked",
+                media_mod.humanize_duration(ms_h.voice_total_seconds),
+            )
+            h4.metric("Links shared", f"{ms_h.total_links:,}")
+
+            # Most active day
+            per_day_h = _per_day(cache_key, messages)
+            if per_day_h:
+                most_active = max(per_day_h, key=lambda r: r[1])
+                st.markdown(
+                    f"📅 **Most active day:** `{most_active[0]}` — "
+                    f"**{most_active[1]:,}** messages"
+                )
+
+            # Peak hour overall
+            grid_h = _hour_weekday(cache_key, messages)
+            total_by_hour = [sum(grid_h[wd][h] for wd in range(7)) for h in range(24)]
+            peak_h = max(range(24), key=lambda i: total_by_hour[i])
+            st.markdown(
+                f"🕒 **Peak chat hour:** `{peak_h}:00` "
+                f"({total_by_hour[peak_h]:,} messages)"
+            )
+
+            # Top 3 emojis
+            es_h = _emojis(cache_key, messages)
+            if es_h.chat_top:
+                top3_emoji = " ".join(f"{e} ({c:,})" for e, c in es_h.chat_top[:5])
+                st.markdown(f"😄 **Top emojis:** {top3_emoji}")
+
+            # Top 3 link domains
+            if ms_h.top_domains:
+                top3_dom = ", ".join(f"`{d}` ({c})" for d, c in ms_h.top_domains[:5])
+                st.markdown(f"🔗 **Top domains:** {top3_dom}")
+
+            # Reply latency snapshot
+            lat_h = _latency(cache_key, messages)
+            if lat_h.overall_seconds:
+                st.markdown(
+                    f"⏱️ **Reply speed:** median "
+                    f"`{latency_mod.humanize_seconds(lat_h.median_seconds)}`, "
+                    f"p90 `{latency_mod.humanize_seconds(lat_h.p90_seconds)}` "
+                    f"({len(lat_h.overall_seconds):,} replies)"
+                )
+
+            # Speaking style snapshot
+            speak_h = _speaking(cache_key, messages)
+            if speak_h:
+                st.markdown("✍️ **Speaking style:**")
+                style_rows = []
+                for s in sorted(speak_h.values(), key=lambda s: -s.msg_count):
+                    style_rows.append(
+                        {
+                            "user": s.name,
+                            "msgs": s.msg_count,
+                            "avg chars": round(s.avg_chars, 1),
+                            "median": s.median_chars,
+                            "Q%": round(s.question_ratio * 100, 1),
+                            "!%": round(s.exclamation_ratio * 100, 1),
+                            "CAPS%": round(s.caps_ratio * 100, 1),
+                        }
+                    )
+                st.dataframe(
+                    pd.DataFrame(style_rows),
+                    use_container_width=True,
+                    hide_index=True,
+                )
+
+            # Words highlight: top 30 chat-wide
+            wres_h = _words(cache_key, messages, most_com)
+            if wres_h.chat_top_words:
+                wc_h = render_mod.wordcloud_png(wres_h.chat_top_words)
+                if wc_h:
+                    st.markdown("💬 **Word cloud:**")
+                    st.image(wc_h, caption=None)
+
+            # Extreme messages (only when sentiment is on)
+            if wres_h.sentiment_available:
+                all_extr = []
+                for u in wres_h.users.values():
+                    for txt, s in u.messages:
+                        if isinstance(s, float) and abs(s) > 0.3 and txt:
+                            all_extr.append((txt, s, u.name))
+                if all_extr:
+                    most_pos = sorted(all_extr, key=lambda r: -r[1])[:5]
+                    most_neg = sorted(all_extr, key=lambda r: r[1])[:5]
+                    eh1, eh2 = st.columns(2)
+                    eh1.markdown("💚 **Top 5 positive moments**")
+                    eh1.dataframe(
+                        pd.DataFrame(most_pos, columns=["text", "sentiment", "user"]),
+                        use_container_width=True,
+                        hide_index=True,
+                        height=240,
+                    )
+                    eh2.markdown("💔 **Top 5 negative moments**")
+                    eh2.dataframe(
+                        pd.DataFrame(most_neg, columns=["text", "sentiment", "user"]),
+                        use_container_width=True,
+                        hide_index=True,
+                        height=240,
+                    )
+
             st.caption(f"Rendered in {time.time() - t0:.1f}s")

@@ -1,17 +1,22 @@
-streamlit
-plotly
-pyvis
-pywebio
-jmespath
-nltk
-networkx
-matplotlib
-emoji
-wordcloud
-phonenumbers
-validate_email
-pandas
-vaderSentiment
-PyQt6
-PyQt6-Qt6
-PyQt6-sip
+# Core analysis stack — Streamlit dashboard
+streamlit==1.57.0
+plotly==6.7.0
+pyvis==0.3.2
+
+# Data processing + analytics
+pandas==3.0.2
+networkx==3.6.1
+nltk==3.9.4
+jmespath==1.1.0
+
+# Charts / visualisation
+matplotlib==3.10.9
+wordcloud==1.9.6
+
+# Content extraction
+emoji==2.15.0
+phonenumbers==9.0.30
+validate_email==1.3
+
+# Optional: install separately for Russian sentiment analysis (~1GB)
+# pip install -r requirements-sentiment.txt

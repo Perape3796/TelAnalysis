@@ -95,10 +95,68 @@ def hour_weekday_heatmap(messages: list[dict]) -> list[list[int]]:
     return grid
 
 
+def hour_distribution_per_user(
+    messages: list[dict],
+) -> dict[str, tuple[str, list[int]]]:
+    """For each user_id, return (display_name, [counts by hour 0..23])."""
+    out: dict[str, tuple[str, list[int]]] = {}
+    for m in messages:
+        if not isinstance(m, dict):
+            continue
+        uid = m.get("from_id")
+        if not uid:
+            continue
+        d = _parse_date(m.get("date"))
+        if d is None:
+            continue
+        if uid not in out:
+            name = m.get("from") or uid
+            out[uid] = (name, [0] * 24)
+        out[uid][1][d.hour] += 1
+    return out
+
+
 def calendar_data(messages: list[dict]) -> list[tuple[str, int]]:
     """Per-day counts as (date_iso, count). Same as messages_per_day, but
     explicit name for the calendar heatmap consumer."""
     return messages_per_day(messages)
+
+
+def date_bounds(messages: list[dict]) -> tuple[str, str] | None:
+    """Min/max dated message timestamps as ISO strings, or None if no dated msgs."""
+    first = None
+    last = None
+    for m in messages:
+        if not isinstance(m, dict):
+            continue
+        d = _parse_date(m.get("date"))
+        if d is None:
+            continue
+        if first is None or d < first:
+            first = d
+        if last is None or d > last:
+            last = d
+    if first is None:
+        return None
+    return first.strftime("%Y-%m-%d"), last.strftime("%Y-%m-%d")
+
+
+def filter_by_date(messages: list[dict], from_date: str, to_date: str) -> list[dict]:
+    """Keep messages with date in [from_date, to_date]. Date strings YYYY-MM-DD.
+    Undated messages (rare service events) are kept."""
+    out = []
+    for m in messages:
+        if not isinstance(m, dict):
+            out.append(m)
+            continue
+        d = _parse_date(m.get("date"))
+        if d is None:
+            out.append(m)
+            continue
+        ds = d.strftime("%Y-%m-%d")
+        if from_date <= ds <= to_date:
+            out.append(m)
+    return out
 
 
 def participants_table(messages: list[dict]) -> list[tuple[str, str, int]]:

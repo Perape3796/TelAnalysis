@@ -71,19 +71,20 @@ def chat_label(chat: Chat) -> str:
 # Telegram chat type → which dashboard sections make sense.
 # Keep this conservative: missing keys default to "show everything".
 _DASHBOARD_BY_TYPE = {
-    "personal_chat": {"overview", "graph", "words", "perusers"},
-    "private_group": {"overview", "graph", "words", "perusers"},
-    "private_supergroup": {"overview", "graph", "words", "perusers"},
-    "public_supergroup": {"overview", "graph", "words", "perusers"},
-    "private_channel": {"overview", "channel"},
-    "public_channel": {"overview", "channel"},
-    "saved_messages": {"overview", "words"},
-    "bot_chat": {"overview", "words", "perusers"},
+    "personal_chat": {"overview", "graph", "words", "perusers", "highlights"},
+    "private_group": {"overview", "graph", "words", "perusers", "highlights"},
+    "private_supergroup": {"overview", "graph", "words", "perusers", "highlights"},
+    "public_supergroup": {"overview", "graph", "words", "perusers", "highlights"},
+    "private_channel": {"overview", "channel", "highlights"},
+    "public_channel": {"overview", "channel", "highlights"},
+    "saved_messages": {"overview", "words", "highlights"},
+    "bot_chat": {"overview", "words", "perusers", "highlights"},
 }
 
 
 def sections_for_type(chat_type: str) -> set[str]:
     """Which dashboard tabs apply to this chat type."""
     return _DASHBOARD_BY_TYPE.get(
-        chat_type, {"overview", "graph", "words", "channel", "perusers"}
+        chat_type,
+        {"overview", "graph", "words", "channel", "perusers", "highlights"},
     )

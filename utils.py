@@ -62,20 +62,24 @@ def write_chat_as_single(chat, asset_dir="asset"):
     return path
 
 
-##config telanalysis
+DEFAULT_CONF = {
+    "select_type_stem": "Off",
+    "most_com": 30,
+    "most_com_channel": 100,
+}
+
+
 def read_conf(option):
     try:
-        with open("config.json", "r") as read_conf:
-            read_conf = json.load(read_conf)
-            select_type_stem = jmespath.search(f"{option}", read_conf)
-        return select_type_stem
-    except:
-        write_conf(
-            '{"select_type_stem": "Off", "most_com": 30, "most_com_channel":100}'
-        )
+        with open("config.json", "r") as f:
+            data = json.load(f)
+        return jmespath.search(option, data)
+    except (FileNotFoundError, json.JSONDecodeError):
+        write_conf(DEFAULT_CONF)
+        return DEFAULT_CONF.get(option)
 
 
-def write_conf(dct):
+def write_conf(dct: dict) -> None:
     with open("config.json", "w") as fw:
         json.dump(dct, fw)
 
