@@ -68,6 +68,20 @@ def chat_label(chat: Chat) -> str:
     return f"{chat.name} [{chat.type}] · {len(chat.messages):,} msgs"
 
 
+def combined_chat(chats: list[Chat]) -> Chat:
+    """Synthesize a virtual chat from concatenated messages of all input chats.
+    Used for the 'Analyse all chats' aggregate view in full-archive exports."""
+    all_msgs: list = []
+    for c in chats:
+        all_msgs.extend(c.messages)
+    return Chat(
+        id="all",
+        name=f"All chats (combined, {len(chats)})",
+        type="multichat",
+        messages=all_msgs,
+    )
+
+
 # Telegram chat type → which dashboard sections make sense.
 # Keep this conservative: missing keys default to "show everything".
 _DASHBOARD_BY_TYPE = {
@@ -79,6 +93,9 @@ _DASHBOARD_BY_TYPE = {
     "public_channel": {"overview", "channel", "highlights"},
     "saved_messages": {"overview", "words", "highlights"},
     "bot_chat": {"overview", "words", "perusers", "highlights"},
+    # Synthetic combined-archive view: graph and perusers don't make sense
+    # because participants come from disjoint chats.
+    "multichat": {"overview", "words", "highlights"},
 }
 
 

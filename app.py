@@ -26,8 +26,12 @@ from analysis import media as media_mod
 from analysis import (
     loader,
     overview,
+    phrases as phrases_mod,
+    reciprocity as reciprocity_mod,
     render as render_mod,
+    sessions as sessions_mod,
     speaking as speaking_mod,
+    timing as timing_mod,
     words as words_mod,
 )
 
@@ -102,6 +106,32 @@ def _media(cache_key: str, _messages: list):
 @st.cache_data(show_spinner="Profiling speaking style…")
 def _speaking(cache_key: str, _messages: list):
     return speaking_mod.analyze(_messages)
+
+
+@st.cache_data(show_spinner="Computing streaks…")
+def _streaks(cache_key: str, _messages: list, filter_uid: str | None = None):
+    return timing_mod.streaks_and_silences(_messages, filter_uid=filter_uid)
+
+
+@st.cache_data(show_spinner="Computing initiators…")
+def _initiators(cache_key: str, _messages: list, gap_hours: int):
+    return timing_mod.conversation_initiators(_messages, gap_hours=gap_hours)
+
+
+@st.cache_data(show_spinner="Splitting into conversations…")
+def _sessions(cache_key: str, _messages: list, gap_minutes: int):
+    sess = sessions_mod.split_into_sessions(_messages, gap_minutes=gap_minutes)
+    return sessions_mod.stats(sess)
+
+
+@st.cache_data(show_spinner="Mining phrases…")
+def _phrases(cache_key: str, _messages: list, n: int, top: int):
+    return phrases_mod.top_phrases(_messages, n=n, top=top)
+
+
+@st.cache_data(show_spinner="Computing reciprocity…")
+def _reciprocity(cache_key: str, _messages: list):
+    return reciprocity_mod.compute(_messages)
 
 
 @st.cache_data(show_spinner="Filtering by date…")
@@ -236,13 +266,31 @@ with st.sidebar:
             help="Empty = all types",
         )
         filtered = [c for c in chats if not type_filter or c.type in type_filter]
-        # Selectbox has built-in search by typing
-        idx = st.selectbox(
-            "Pick a chat",
-            options=range(len(filtered)),
-            format_func=lambda i: loader.chat_label(filtered[i]),
+
+        combine_all = st.checkbox(
+            "📚 Combine all (filtered) chats",
+            value=False,
+            help=(
+                "Treat the whole archive as one big chat. Aggregates words, "
+                "emojis, links, media, voice across everything. Graph and "
+                "Per-user tabs are hidden — they don't make sense across "
+                "disjoint chats."
+            ),
         )
-        chat = filtered[idx]
+        if combine_all:
+            chat = loader.combined_chat(filtered)
+            st.caption(
+                f"📦 Combined: {len(filtered)} chats, "
+                f"{len(chat.messages):,} messages total"
+            )
+        else:
+            # Selectbox has built-in search by typing
+            idx = st.selectbox(
+                "Pick a chat",
+                options=range(len(filtered)),
+                format_func=lambda i: loader.chat_label(filtered[i]),
+            )
+            chat = filtered[idx]
 
     st.divider()
 
@@ -427,6 +475,49 @@ for tab, (_, key) in zip(tabs, tab_specs):
                     f"Bars normalised per-user — fair comparison even when "
                     f"one user texts more overall."
                 )
+
+            # Conversation sessions summary
+            sess_stats = _sessions(cache_key, messages, gap_minutes=30)
+            if sess_stats.sessions:
+                with st.expander(
+                    f"💬 Conversations · {len(sess_stats.sessions):,} "
+                    f"sessions (gap ≥ 30 min)"
+                ):
+                    sc1, sc2, sc3 = st.columns(3)
+                    sc1.metric(
+                        "Total conversations",
+                        f"{len(sess_stats.sessions):,}",
+                    )
+                    sc2.metric(
+                        "Avg messages/conversation",
+                        f"{sess_stats.avg_messages:.1f}",
+                        help=f"median {sess_stats.median_messages}",
+                    )
+                    if sess_stats.longest:
+                        sc3.metric(
+                            "Longest",
+                            f"{sess_stats.longest.msg_count:,} msgs",
+                            help=(
+                                f"{sess_stats.longest.start.date()} → "
+                                f"{sess_stats.longest.end.date()}"
+                            ),
+                        )
+                    if sess_stats.duration_buckets:
+                        bucket_df = pd.DataFrame(
+                            list(sess_stats.duration_buckets.items()),
+                            columns=["session size (msgs)", "count"],
+                        )
+                        fig_buckets = px.bar(
+                            bucket_df,
+                            x="session size (msgs)",
+                            y="count",
+                            template="plotly_dark",
+                        )
+                        fig_buckets.update_layout(
+                            height=260,
+                            margin=dict(l=0, r=0, t=10, b=0),
+                        )
+                        st.plotly_chart(fig_buckets, use_container_width=True)
 
             participants = _participants(cache_key, messages)
             if participants:
@@ -792,6 +883,32 @@ for tab, (_, key) in zip(tabs, tab_specs):
                             height=400,
                         )
 
+            # Repeated phrases (n-grams)
+            st.subheader("🔁 Repeated phrases")
+            n_choice = st.radio(
+                "Phrase length",
+                ["bigrams (2 words)", "trigrams (3 words)"],
+                horizontal=True,
+                key="phr_n",
+            )
+            n_words = 2 if n_choice.startswith("bi") else 3
+            phr = _phrases(cache_key, messages, n=n_words, top=30)
+            if phr:
+                phr_df = pd.DataFrame(phr, columns=["phrase", "count"])
+                fig_phr = px.bar(
+                    phr_df,
+                    x="phrase",
+                    y="count",
+                    template="plotly_dark",
+                )
+                fig_phr.update_layout(height=320, margin=dict(l=0, r=0, t=10, b=0))
+                st.plotly_chart(fig_phr, use_container_width=True)
+                st.dataframe(
+                    phr_df, use_container_width=True, hide_index=True, height=300
+                )
+            else:
+                st.caption("No repeated phrases found.")
+
             # Word trend over time
             st.subheader("📈 Word usage over time")
             term_input = st.text_input(
@@ -1045,6 +1162,132 @@ for tab, (_, key) in zip(tabs, tab_specs):
                                     f"… (truncated, full length {style.longest_chars:,})"
                                 )
 
+                    # Time-of-day persona + length distribution
+                    cp1, cp2 = st.columns(2)
+                    with cp1:
+                        st.markdown(f"**{style.persona}** · time of day")
+                        tod_df = pd.DataFrame(
+                            [
+                                {"bucket": k, "count": style.time_of_day.get(k, 0)}
+                                for k in ["night", "morning", "day", "evening"]
+                            ]
+                        )
+                        fig_tod = px.bar(
+                            tod_df,
+                            x="bucket",
+                            y="count",
+                            template="plotly_dark",
+                            color_discrete_sequence=["#5B8FF9"],
+                        )
+                        fig_tod.update_layout(
+                            height=240, margin=dict(l=0, r=0, t=10, b=0)
+                        )
+                        st.plotly_chart(fig_tod, use_container_width=True)
+                    with cp2:
+                        st.markdown(f"**{style.length_persona}** · message length")
+                        lb_df = pd.DataFrame(
+                            [
+                                {"bucket": k, "count": style.length_buckets.get(k, 0)}
+                                for k in ["<30", "30-100", "100-300", "300+"]
+                            ]
+                        )
+                        fig_lb = px.bar(
+                            lb_df,
+                            x="bucket",
+                            y="count",
+                            template="plotly_dark",
+                            color_discrete_sequence=["#5AD8A6"],
+                        )
+                        fig_lb.update_layout(
+                            height=240, margin=dict(l=0, r=0, t=10, b=0)
+                        )
+                        st.plotly_chart(fig_lb, use_container_width=True)
+
+                # Reciprocity (when 2-user chat)
+                rec = _reciprocity(cache_key, messages)
+                if rec.available and rec.a_to_b and rec.b_to_a:
+                    # Find direction where THIS user is the responder
+                    my_dir = (
+                        rec.a_to_b if rec.a_to_b.responder_id == user_id else rec.b_to_a
+                    )
+                    other_dir = rec.b_to_a if my_dir is rec.a_to_b else rec.a_to_b
+                    if my_dir is not None:
+                        st.subheader("⏱️ Response reciprocity")
+                        rec1, rec2, rec3 = st.columns(3)
+                        rec1.metric(
+                            f"{user_name}: median response",
+                            latency_mod.humanize_seconds(my_dir.median_seconds),
+                            help=f"to {my_dir.initiator_name}",
+                        )
+                        rec2.metric(
+                            "Within 5 min",
+                            f"{my_dir.within_5m * 100:.1f}%",
+                        )
+                        rec3.metric(
+                            "Within 1 hour",
+                            f"{my_dir.within_60m * 100:.1f}%",
+                        )
+                        # Comparison: how does this differ from the other direction
+                        delta_5m = (my_dir.within_5m - other_dir.within_5m) * 100
+                        st.caption(
+                            f"Reverse — {other_dir.initiator_name} → "
+                            f"{other_dir.responder_name}: "
+                            f"median {latency_mod.humanize_seconds(other_dir.median_seconds)}, "
+                            f"5m {other_dir.within_5m * 100:.1f}%. "
+                            f"Difference in 5-min response rate: "
+                            f"**{delta_5m:+.1f} pp**"
+                        )
+
+                # Streaks & silences for this user
+                pu_streaks = _streaks(cache_key, messages, filter_uid=user_id)
+                if pu_streaks.total_active_days:
+                    st.subheader("🔥 Streaks & silences")
+                    sk1, sk2, sk3 = st.columns(3)
+                    sk1.metric(
+                        "Longest streak",
+                        f"{pu_streaks.longest_streak_days} days",
+                        help=f"{pu_streaks.longest_streak_start} → {pu_streaks.longest_streak_end}",
+                    )
+                    sk2.metric(
+                        "Current streak",
+                        f"{pu_streaks.current_streak_days} days",
+                    )
+                    sk3.metric(
+                        "Total active days",
+                        f"{pu_streaks.total_active_days:,}",
+                    )
+                    if pu_streaks.longest_silences:
+                        sil_df = pd.DataFrame(
+                            pu_streaks.longest_silences,
+                            columns=["from", "to", "days"],
+                        )
+                        with st.expander(f"😶 Top {len(sil_df)} silences"):
+                            st.dataframe(
+                                sil_df,
+                                use_container_width=True,
+                                hide_index=True,
+                                height=240,
+                            )
+
+                # Conversation initiator share for this user
+                pu_init = _initiators(cache_key, messages, gap_hours=4)
+                if pu_init.total_initiations:
+                    my_row = next(
+                        (r for r in pu_init.rows if r.user_id == user_id),
+                        None,
+                    )
+                    if my_row is not None:
+                        st.subheader("🚀 Conversation initiator")
+                        i1, i2 = st.columns(2)
+                        i1.metric(
+                            "Initiations after 4h+ silence",
+                            f"{my_row.initiations:,}",
+                        )
+                        i2.metric(
+                            "Share of all initiations",
+                            f"{my_row.share * 100:.1f}%",
+                        )
+
                 # Daily timeline
                 pu_per_day = overview.messages_per_day(user_msgs)
                 if pu_per_day:
@@ -1252,6 +1495,43 @@ for tab, (_, key) in zip(tabs, tab_specs):
                     f"`{latency_mod.humanize_seconds(lat_h.median_seconds)}`, "
                     f"p90 `{latency_mod.humanize_seconds(lat_h.p90_seconds)}` "
                     f"({len(lat_h.overall_seconds):,} replies)"
+                )
+
+            # Streaks chat-wide
+            streaks_h = _streaks(cache_key, messages, filter_uid=None)
+            if streaks_h.total_active_days:
+                st.markdown(
+                    f"🔥 **Longest streak:** `{streaks_h.longest_streak_days}` "
+                    f"days (`{streaks_h.longest_streak_start}` → "
+                    f"`{streaks_h.longest_streak_end}`) · "
+                    f"current: `{streaks_h.current_streak_days}` days"
+                )
+                if streaks_h.longest_silences:
+                    longest_sil = streaks_h.longest_silences[0]
+                    st.markdown(
+                        f"😶 **Longest silence:** `{longest_sil[2]}` days "
+                        f"(`{longest_sil[0]}` → `{longest_sil[1]}`)"
+                    )
+
+            # Conversation initiators
+            init_h = _initiators(cache_key, messages, gap_hours=4)
+            if init_h.total_initiations and len(init_h.rows) > 1:
+                st.markdown("🚀 **Conversation initiators (after 4h+ silence):**")
+                init_df = pd.DataFrame(
+                    [
+                        {
+                            "user": r.name,
+                            "initiations": r.initiations,
+                            "share": f"{r.share * 100:.1f}%",
+                        }
+                        for r in init_h.rows
+                    ]
+                )
+                st.dataframe(
+                    init_df,
+                    use_container_width=True,
+                    hide_index=True,
+                    height=180,
                 )
 
             # Speaking style snapshot
