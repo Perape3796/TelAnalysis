@@ -1,0 +1,7 @@
+[client]
+# Hide the "Deploy" button and other Streamlit Cloud / dev-only menu items.
+# Options: "auto" | "developer" | "viewer" | "minimal"
+toolbarMode = "minimal"
+
+[browser]
+gatherUsageStats = false

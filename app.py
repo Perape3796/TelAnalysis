@@ -212,13 +212,29 @@ with st.sidebar:
 
     src_mode = st.radio(
         "Source",
-        ["File path", "Upload"],
+        ["Upload", "File path"],
         horizontal=True,
-        help="65 MB+ exports — use path. Faster, no base64 over WebSocket.",
+        help=(
+            "Drag & drop is the default. For 65MB+ exports use 'File path' — "
+            "faster, no base64 over WebSocket."
+        ),
     )
 
     json_path: str | None = None
-    if src_mode == "File path":
+    if src_mode == "Upload":
+        upload = st.file_uploader(
+            "Drop your Telegram export JSON here",
+            type=["json"],
+            help="Drag the result.json file in, or click to browse.",
+        )
+        if upload is not None:
+            tmp = tempfile.NamedTemporaryFile(
+                delete=False, suffix=".json", prefix="tla_"
+            )
+            tmp.write(upload.read())
+            tmp.close()
+            json_path = tmp.name
+    else:
         path_input = st.text_input(
             "Path to result.json",
             value=st.session_state.get("last_path", ""),
@@ -230,15 +246,6 @@ with st.sidebar:
                 st.session_state["last_path"] = path_input
             else:
                 st.error("File not found")
-    else:
-        upload = st.file_uploader("Telegram export JSON", type=["json"])
-        if upload is not None:
-            tmp = tempfile.NamedTemporaryFile(
-                delete=False, suffix=".json", prefix="tla_"
-            )
-            tmp.write(upload.read())
-            tmp.close()
-            json_path = tmp.name
 
 if json_path is None:
     st.info(
