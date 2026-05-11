@@ -936,6 +936,53 @@ for tab, (_, key) in zip(tabs, tab_specs):
                                 legend_title="",
                             )
                             st.plotly_chart(fig_u, use_container_width=True)
+
+                    # Sentiment by hour-of-day & weekday — circadian / weekly
+                    # rhythm of mood. Часто противоположно weekly trend:
+                    # weekly показывает ровно, а hour может скакать утром vs вечером.
+                    by_hour = words_mod.sentiment_by_hour(res.dated_scores)
+                    by_wd = words_mod.sentiment_by_weekday(res.dated_scores)
+                    if by_hour or by_wd:
+                        s_h_col, s_wd_col = st.columns(2)
+                        if by_hour:
+                            with s_h_col:
+                                hh_df = pd.DataFrame(by_hour)
+                                fig_h = px.bar(
+                                    hh_df,
+                                    x="hour",
+                                    y="avg",
+                                    template="telanalysis",
+                                    title=i18n.t("По часу дня"),
+                                )
+                                fig_h.add_hline(y=0, line_dash="dot", line_color="gray")
+                                fig_h.update_layout(
+                                    height=240,
+                                    margin=dict(l=0, r=0, t=40, b=0),
+                                    xaxis=dict(title=i18n.t("час"), dtick=2),
+                                    yaxis=dict(title=i18n.t("среднее compound")),
+                                )
+                                st.plotly_chart(fig_h, use_container_width=True)
+                        if by_wd:
+                            with s_wd_col:
+                                wd_df = pd.DataFrame(by_wd)
+                                wd_labels = i18n.weekday_short_labels()
+                                wd_df["weekday"] = wd_df["weekday"].map(lambda w: wd_labels[w])
+                                fig_wd = px.bar(
+                                    wd_df,
+                                    x="weekday",
+                                    y="avg",
+                                    template="telanalysis",
+                                    title=i18n.t("По дню недели"),
+                                )
+                                fig_wd.add_hline(y=0, line_dash="dot", line_color="gray")
+                                fig_wd.update_layout(
+                                    height=240,
+                                    margin=dict(l=0, r=0, t=40, b=0),
+                                    xaxis=dict(title=""),
+                                    yaxis=dict(title=i18n.t("среднее compound")),
+                                )
+                                st.plotly_chart(fig_wd, use_container_width=True)
+
                     st.caption(
                         i18n.t(
                             "⚠ Sentiment не выкупает сарказм, шутки и слэнг. "

@@ -400,6 +400,45 @@ def sentiment_period_series(
     return rows
 
 
+def sentiment_by_hour(
+    dated_scores: list[tuple[str, float, str]],
+) -> list[dict]:
+    """Average sentiment per hour-of-day (0..23). Surfaces "morning gloomy /
+    evening upbeat" patterns the weekly series flattens out.
+    """
+    buckets: dict[int, list[float]] = defaultdict(list)
+    for date_iso, score, _uid in dated_scores:
+        try:
+            d = datetime.fromisoformat(date_iso)
+        except ValueError:
+            continue
+        buckets[d.hour].append(score)
+    return [
+        {"hour": h, "avg": sum(buckets[h]) / len(buckets[h]), "count": len(buckets[h])}
+        for h in range(24)
+        if h in buckets
+    ]
+
+
+def sentiment_by_weekday(
+    dated_scores: list[tuple[str, float, str]],
+) -> list[dict]:
+    """Average sentiment per day-of-week (0=Mon ... 6=Sun). Captures
+    Monday-vs-Friday energy patterns hidden in the weekly average."""
+    buckets: dict[int, list[float]] = defaultdict(list)
+    for date_iso, score, _uid in dated_scores:
+        try:
+            d = datetime.fromisoformat(date_iso)
+        except ValueError:
+            continue
+        buckets[d.weekday()].append(score)
+    return [
+        {"weekday": w, "avg": sum(buckets[w]) / len(buckets[w]), "count": len(buckets[w])}
+        for w in range(7)
+        if w in buckets
+    ]
+
+
 def _msg_text_blob(message: dict) -> str:
     """Concatenate all text content from a message into a lowercase string."""
     parts: list[str] = []
