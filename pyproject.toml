@@ -1,0 +1,25 @@
+# Project tooling config. This is NOT a packaging manifest — TelAnalysis is a
+# Streamlit app, not a PyPI package. No [project] / [build-system] sections.
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+extend-exclude = [".venv", "asset", "__pycache__"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B"]
+ignore = [
+    "E501",  # line-length handled by formatter; soft for prose-heavy docstrings
+    "B007",  # unused loop variable — common in tuple unpacking
+    "B008",  # function calls in default args — common in streamlit cache decorators
+    "B023",  # function-uses-loop-variable — used intentionally in this codebase
+    "B905",  # zip without strict= — pre-3.10 compat
+    "E731",  # lambda-assignment — used for streamlit hash funcs
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["E402"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
