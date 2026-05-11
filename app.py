@@ -19,6 +19,7 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from analysis import anniversaries as anniversaries_mod
+from analysis import chains as chains_mod
 from analysis import forwards as forwards_mod
 from analysis import graph as graph_mod
 from analysis import highlights as highlights_mod
@@ -738,9 +739,38 @@ for tab, (_, key) in zip(tabs, tab_specs):
         elif key == "graph":
             t0 = time.time()
             g = ui_cache.graph_data(cache_key, messages)
-            cgraph1, cgraph2 = st.columns(2)
+            chain_stats = chains_mod.analyze(messages)
+            cgraph1, cgraph2, cgraph3, cgraph4 = st.columns(4)
             cgraph1.metric(i18n.t("Узлов"), f"{len(g.nodes):,}")
             cgraph2.metric(i18n.t("Связей"), f"{len(g.edges):,}")
+            if chain_stats.chain_count:
+                cgraph3.metric(
+                    i18n.t("Макс. глубина reply"),
+                    f"{chain_stats.max_depth}",
+                    help=i18n.t(
+                        "Длиннейшая цепочка quote-reply подряд. Глубина 1 = одиночный "
+                        "ответ, 5+ = глубокая ветка с реплаями на реплаи."
+                    ),
+                )
+                cgraph4.metric(
+                    i18n.t("Сред. глубина reply"),
+                    f"{chain_stats.avg_depth:.2f}",
+                )
+            if chain_stats.depth_distribution and chain_stats.max_depth > 1:
+                cd_df = pd.DataFrame(chain_stats.depth_distribution, columns=["depth", "count"])
+                fig_cd = px.bar(
+                    cd_df,
+                    x="depth",
+                    y="count",
+                    template="telanalysis",
+                    title=i18n.t("Распределение глубины reply-цепочек"),
+                )
+                fig_cd.update_layout(
+                    height=240,
+                    margin=dict(l=0, r=0, t=40, b=0),
+                    xaxis=dict(title=i18n.t("глубина (хопов)"), dtick=1),
+                )
+                st.plotly_chart(fig_cd, use_container_width=True)
 
             if not g.nodes:
                 st.info(i18n.t("No participants found in this chat (only service events?)."))
