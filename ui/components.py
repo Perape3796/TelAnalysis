@@ -54,9 +54,14 @@ def highlights_grid_html(items) -> str:
     return f'<div class="tla-hl-grid">{cards}</div>'
 
 
-def calendar_heatmap_fig(df: pd.DataFrame) -> go.Figure | None:
+def calendar_heatmap_fig(df: pd.DataFrame, binary: bool = False) -> go.Figure | None:
     """GitHub-contributions-style calendar heatmap. df has columns
-    ['date', 'messages']. Returns None on empty df."""
+    ['date', 'messages']. Returns None on empty df.
+
+    binary=True paints "did we talk that day at all" instead of count —
+    useful for seeing commitment patterns (long uninterrupted runs vs
+    sparse weeks) without high-volume days washing everything else out.
+    """
     if df is None or len(df) == 0:
         return None
     cal = df.copy()
@@ -64,6 +69,8 @@ def calendar_heatmap_fig(df: pd.DataFrame) -> go.Figure | None:
     full = pd.date_range(cal["date"].min(), cal["date"].max(), freq="D")
     cal = cal.set_index("date").reindex(full, fill_value=0).reset_index()
     cal.columns = ["date", "messages"]
+    if binary:
+        cal["messages"] = (cal["messages"] > 0).astype(int)
     cal["year"] = cal["date"].dt.year
     cal["weekday"] = cal["date"].dt.weekday
     cal["week"] = cal["date"].dt.isocalendar().week
@@ -75,6 +82,16 @@ def calendar_heatmap_fig(df: pd.DataFrame) -> go.Figure | None:
         cols=1,
         subplot_titles=[str(y) for y in years],
         vertical_spacing=0.08,
+    )
+    hovertemplate = (
+        "%{y} · week %{x}<br>%{z}<extra></extra>"
+        if binary
+        else "%{y} · week %{x}<br>messages: %{z}<extra></extra>"
+    )
+    colorscale = (
+        [[0.0, "#0E1117"], [1.0, theme_mod.PALETTE.get("success", "#5AD8A6")]]
+        if binary
+        else theme_mod.HEAT_SCALE
     )
     for idx, y in enumerate(years, start=1):
         sub = cal[cal["year"] == y].copy()
@@ -91,15 +108,15 @@ def calendar_heatmap_fig(df: pd.DataFrame) -> go.Figure | None:
                 z=pivot.values,
                 x=[f"W{w}" for w in pivot.columns],
                 y=weekdays_lbl,
-                colorscale=theme_mod.HEAT_SCALE,
-                showscale=(idx == 1),
-                hovertemplate="%{y} · week %{x}<br>messages: %{z}<extra></extra>",
+                colorscale=colorscale,
+                showscale=(idx == 1) and not binary,
+                hovertemplate=hovertemplate,
             ),
             row=idx,
             col=1,
         )
     fig.update_layout(
-        title="Calendar heatmap",
+        title="Calendar heatmap" + (" (binary)" if binary else ""),
         template="telanalysis",
         height=180 * len(years) + 40,
         margin=dict(l=0, r=0, t=60, b=0),

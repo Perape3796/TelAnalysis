@@ -465,9 +465,31 @@ for tab, (_, key) in zip(tabs, tab_specs):
                         if sample:
                             st.caption(i18n.t("пример: «{s}…»").format(s=sample[:140]))
 
-                cal_fig = ui_components.calendar_heatmap_fig(df)
+                cal_mode = st.radio(
+                    i18n.t("Календарь"),
+                    options=["count", "binary"],
+                    format_func=lambda x: (
+                        i18n.t("по количеству") if x == "count" else i18n.t("писали/нет")
+                    ),
+                    horizontal=True,
+                    label_visibility="collapsed",
+                    key="cal_mode",
+                )
+                cal_fig = ui_components.calendar_heatmap_fig(df, binary=(cal_mode == "binary"))
                 if cal_fig is not None:
                     st.plotly_chart(cal_fig, use_container_width=True)
+                if cal_mode == "binary" and not df.empty:
+                    active = int((df["messages"] > 0).sum())
+                    total = len(df)
+                    st.caption(
+                        i18n.t(
+                            "Активных дней: {a} из {t} ({p}%) — серым месяцы без сообщений."
+                        ).format(
+                            a=active,
+                            t=total,
+                            p=f"{active * 100 / total:.1f}",
+                        )
+                    )
             else:
                 st.info(i18n.t("No dated messages."))
 
