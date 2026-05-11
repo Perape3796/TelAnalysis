@@ -27,6 +27,7 @@ from analysis import (
     loader,
     overview,
 )
+from analysis import mat as mat_mod
 from analysis import media as media_mod
 from analysis import monologues as monologues_mod
 from analysis import (
@@ -1596,6 +1597,40 @@ for tab, (_, key) in zip(tabs, tab_specs):
                         use_container_width=True,
                         hide_index=True,
                         height=300,
+                    )
+
+                # Mat (RU profanity) per-user table. Compares all participants
+                # so you see who swears more in this chat — single user gives
+                # only context-free numbers, comparison gives the relative.
+                mat_stats = mat_mod.analyze(messages)
+                if mat_stats.per_user and any(u.mat_hits > 0 for u in mat_stats.per_user.values()):
+                    st.subheader(i18n.t("Мат"))
+                    st.caption(
+                        i18n.t(
+                            "Совпадение по корням (хуй, пизд, ебат, бляд...) с word boundary. "
+                            "Может ловить и редкие нейтральные слова."
+                        )
+                    )
+                    mat_rows = []
+                    for u in sorted(
+                        mat_stats.per_user.values(),
+                        key=lambda x: -x.hits_per_100,
+                    ):
+                        mat_rows.append(
+                            {
+                                "user": u.name,
+                                "msgs": u.total_messages,
+                                "msgs with mat": u.mat_messages,
+                                "% msgs": round(u.msg_share * 100, 1),
+                                "hits": u.mat_hits,
+                                "hits/100msgs": round(u.hits_per_100, 1),
+                            }
+                        )
+                    st.dataframe(
+                        pd.DataFrame(mat_rows),
+                        use_container_width=True,
+                        hide_index=True,
+                        height=180,
                     )
 
                 # Distinguishing words (log-odds) — what THIS user says that
