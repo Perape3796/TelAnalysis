@@ -77,9 +77,44 @@ def _extract_domain(url: str) -> str | None:
         netloc = urlparse(url).netloc.lower()
         if netloc.startswith("www."):
             netloc = netloc[4:]
-        return netloc or None
+        return _normalize_host(netloc) if netloc else None
     except Exception:
         return None
+
+
+# Hosts that point to the same brand under different DNS labels — without
+# this, "youtu.be" and "youtube.com" appear as separate entries and the
+# Top Domains chart undercounts both.
+_HOST_ALIASES: dict[str, str] = {
+    # YouTube
+    "youtu.be": "youtube.com",
+    "m.youtube.com": "youtube.com",
+    "music.youtube.com": "youtube.com",
+    # Twitter / X
+    "x.com": "twitter.com",
+    "mobile.twitter.com": "twitter.com",
+    "t.co": "twitter.com",
+    "vxtwitter.com": "twitter.com",
+    "fxtwitter.com": "twitter.com",
+    # Telegram
+    "t.me": "telegram.org",
+    "telegram.me": "telegram.org",
+    # GitHub
+    "raw.githubusercontent.com": "github.com",
+    "gist.github.com": "github.com",
+    # Reddit
+    "old.reddit.com": "reddit.com",
+    "redd.it": "reddit.com",
+    # Instagram
+    "instagr.am": "instagram.com",
+    # Spotify
+    "open.spotify.com": "spotify.com",
+    # Other common shorteners → keep as-is (the brand IS the short form)
+}
+
+
+def _normalize_host(netloc: str) -> str:
+    return _HOST_ALIASES.get(netloc, netloc)
 
 
 def analyze(messages: list[dict]) -> MediaStats:

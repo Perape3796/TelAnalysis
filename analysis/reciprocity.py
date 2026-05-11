@@ -8,10 +8,9 @@ from "I answer you"."""
 
 from __future__ import annotations
 
-from collections import Counter, defaultdict
-from dataclasses import dataclass, field
+from collections import defaultdict
+from dataclasses import dataclass
 from datetime import datetime
-from statistics import median
 
 
 @dataclass

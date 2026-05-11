@@ -6,8 +6,8 @@ from dataclasses import dataclass
 
 import jmespath
 
-from utils import remove_emojis
 import nltk_analyse
+from utils import remove_emojis
 
 
 @dataclass

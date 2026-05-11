@@ -26,3 +26,6 @@ Thumbs.db
 
 # nltk data (downloaded at first run)
 nltk_data/
+.ruff_cache/
+.playwright-mcp/
+screenshots/

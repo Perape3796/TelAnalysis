@@ -13,6 +13,11 @@ class LatencyStats:
     user_names: dict[str, str]
     median_seconds: float
     p90_seconds: float
+    # Replies whose delay exceeded `cap_hours` (and were therefore excluded
+    # from the histograms / median / p90). Surfaced in UI so users know the
+    # numbers above don't include slow replies.
+    dropped_over_cap: int = 0
+    cap_hours: int = 24
 
 
 def _ts(m: dict) -> int | None:
@@ -41,6 +46,8 @@ def compute(messages: list[dict], cap_hours: int = 24) -> LatencyStats:
             user_names={},
             median_seconds=0.0,
             p90_seconds=0.0,
+            dropped_over_cap=0,
+            cap_hours=cap_hours,
         )
 
     # id -> (timestamp, responder_id) for fast lookup
@@ -58,6 +65,7 @@ def compute(messages: list[dict], cap_hours: int = 24) -> LatencyStats:
     overall: list[int] = []
     per_user: dict[str, list[int]] = defaultdict(list)
     cap_seconds = cap_hours * 3600
+    dropped = 0
 
     for m in messages:
         if not isinstance(m, dict):
@@ -70,7 +78,10 @@ def compute(messages: list[dict], cap_hours: int = 24) -> LatencyStats:
         if original_ts is None or reply_ts is None:
             continue
         delta = reply_ts - original_ts
-        if delta < 0 or delta > cap_seconds:
+        if delta < 0:
+            continue
+        if delta > cap_seconds:
+            dropped += 1
             continue
         responder = str(m.get("from_id") or "")
         if not responder:
@@ -91,6 +102,8 @@ def compute(messages: list[dict], cap_hours: int = 24) -> LatencyStats:
         user_names=user_names,
         median_seconds=float(median),
         p90_seconds=float(p90),
+        dropped_over_cap=dropped,
+        cap_hours=cap_hours,
     )
 
 

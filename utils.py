@@ -1,13 +1,12 @@
+import json
+import os
 import re
 import string
+
 import emoji
-import os
-import subprocess
-import platform
-import json
 import jmespath
 
-spec_chars = string.punctuation + '\n\xa0«»\t—…"<>?!.,;:꧁@#$%^&*()_+=№%༺༺\༺/༺•'
+spec_chars = string.punctuation + '\n\xa0«»\t—…"<>?!.,;:꧁@#$%^&*()_+=№%༺༺\\༺/༺•'
 
 
 # Full-export support
@@ -71,7 +70,7 @@ DEFAULT_CONF = {
 
 def read_conf(option):
     try:
-        with open("config.json", "r") as f:
+        with open("config.json") as f:
             data = json.load(f)
         return jmespath.search(option, data)
     except (FileNotFoundError, json.JSONDecodeError):
@@ -82,22 +81,6 @@ def read_conf(option):
 def write_conf(dct: dict) -> None:
     with open("config.json", "w") as fw:
         json.dump(dct, fw)
-
-
-def clear_console():
-    system = platform.system()
-    if system == "Windows":
-        subprocess.run("cls", shell=True)
-    elif system == "Darwin" or system == "Linux":
-        subprocess.run("clear", shell=True)
-
-
-def open_url():
-    system = platform.system()
-    if system == "Windows":
-        subprocess.run(f"start http://127.0.0.1:9993", shell=True)
-    elif system == "Darwin" or system == "Linux":
-        subprocess.run("open http://127.0.0.1:9993", shell=True)
 
 
 def remove_chars_from_text(text, char=None):

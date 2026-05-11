@@ -5,7 +5,7 @@ sessions."""
 from __future__ import annotations
 
 from collections import Counter
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime
 from statistics import median
 

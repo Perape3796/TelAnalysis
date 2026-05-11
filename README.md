@@ -44,6 +44,20 @@ streamlit run app.py
 
 Открыть http://localhost:8501. В сайдбаре указать путь к `result.json` (для больших архивов лучше путь, чем upload — десятикратно быстрее).
 
+NLTK-данные (`stopwords`, `punkt_tab`) скачиваются автоматически при первом запуске анализа слов. Опциональный sentiment — `pip install -r requirements-sentiment.txt` (~1GB).
+
+UI-настройки лежат в `.streamlit/config.toml` (по умолчанию скрыта Deploy-кнопка и отключена телеметрия).
+
+## Тесты и линт
+
+```bash
+pip install ruff pytest
+ruff check .
+pytest
+```
+
+CI на push/PR (`.github/workflows/ci.yml`) гоняет то же самое.
+
 ## Источник
 
 Проект построен на основе [**TelAnalysis** by Eduard Isaev](https://github.com/krakodjaba/TelAnalysis) ([@e_isaevsan](https://t.me/stdinio)). Спасибо автору за изначальный проект и логику разбора Telegram-экспорта.

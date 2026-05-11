@@ -10,7 +10,6 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import datetime
 
-
 # 4-way time-of-day buckets
 _TIME_BUCKETS = [
     ("night", range(0, 6)),  # 00-05
@@ -53,6 +52,25 @@ class SpeakingStyle:
     caps_ratio: float  # share of msgs that are mostly uppercase
     time_of_day: dict[str, int] = field(default_factory=dict)  # bucket -> count
     length_buckets: dict[str, int] = field(default_factory=dict)  # bucket -> count
+    # First-message-of-day distribution as minutes-from-midnight (0..1439).
+    # Per-day earliest message — separates "writes first thing in the morning"
+    # from "active in the afternoon", which time_of_day buckets blur together.
+    first_msg_minutes: list[int] = field(default_factory=list)
+
+    @property
+    def first_msg_median(self) -> int | None:
+        """Median minutes-from-midnight across all active days. None if no data."""
+        if not self.first_msg_minutes:
+            return None
+        s = sorted(self.first_msg_minutes)
+        return s[len(s) // 2]
+
+    @property
+    def first_msg_median_hhmm(self) -> str:
+        m = self.first_msg_median
+        if m is None:
+            return "—"
+        return f"{m // 60:02d}:{m % 60:02d}"
 
     @property
     def persona(self) -> str:
@@ -115,6 +133,9 @@ def analyze(messages: list[dict]) -> dict[str, SpeakingStyle]:
     user_texts: dict[str, list[str]] = defaultdict(list)
     user_names: dict[str, str] = {}
     user_hours: dict[str, list[int]] = defaultdict(list)
+    # Per-day earliest message timestamp (minutes-from-midnight) per user.
+    # Walk in chronological order; first message on each calendar date wins.
+    user_first_per_day: dict[str, dict[str, int]] = defaultdict(dict)
 
     for m in messages:
         if not isinstance(m, dict):
@@ -131,6 +152,11 @@ def analyze(messages: list[dict]) -> dict[str, SpeakingStyle]:
         d = _parse(m.get("date"))
         if d is not None:
             user_hours[uid].append(d.hour)
+            day_key = d.strftime("%Y-%m-%d")
+            mins = d.hour * 60 + d.minute
+            existing = user_first_per_day[uid].get(day_key)
+            if existing is None or mins < existing:
+                user_first_per_day[uid][day_key] = mins
 
     out: dict[str, SpeakingStyle] = {}
     for uid, texts in user_texts.items():
@@ -175,5 +201,6 @@ def analyze(messages: list[dict]) -> dict[str, SpeakingStyle]:
             caps_ratio=caps / n,
             time_of_day=time_of_day,
             length_buckets=length_buckets,
+            first_msg_minutes=list(user_first_per_day.get(uid, {}).values()),
         )
     return out

@@ -33,11 +33,23 @@ class UserStats:
     top_words: list[tuple[str, int]] = field(default_factory=list)
     total_tokens: int = 0
     unique_tokens: int = 0
+    # Token list kept around so we can compute length-insensitive lexical
+    # diversity (MTLD). Filled by analyse() — empty for legacy callers.
+    _tokens: list[str] = field(default_factory=list, repr=False)
 
     @property
     def ttr(self) -> float:
-        """Type-token ratio. 1.0 = every word is unique, 0.0 = no diversity."""
+        """Naive type-token ratio. Length-sensitive — prefer .mtld for
+        cross-user comparison."""
         return self.unique_tokens / self.total_tokens if self.total_tokens else 0.0
+
+    @property
+    def mtld(self) -> float:
+        """Measure of Textual Lexical Diversity — bidirectional MTLD.
+        Reports the average run length until TTR drops to 0.72 (factor).
+        Higher = more diverse. Length-insensitive (unlike raw TTR).
+        Returns 0.0 when there isn't enough data."""
+        return _mtld_bidirectional(self._tokens)
 
 
 @dataclass
@@ -67,15 +79,117 @@ def _score_all(texts: list[str]) -> list[float]:
         return [0.0] * len(texts)
 
 
+# MTLD — Measure of Textual Lexical Diversity (McCarthy & Jarvis 2010).
+# Sweep tokens; whenever running TTR drops to `threshold`, increment a
+# "factor count" and reset. Result = total_tokens / factor_count.
+# A partial trailing factor is interpolated. Bidirectional = avg(forward,
+# reverse) — smooths out start-of-text artifacts. Threshold 0.72 is the
+# standard from the literature.
+
+_MTLD_THRESHOLD = 0.72
+
+
+def _mtld_one_direction(tokens: list[str]) -> float:
+    if len(tokens) < 50:
+        return 0.0
+    factors = 0
+    types: set[str] = set()
+    n = 0
+    for tok in tokens:
+        types.add(tok)
+        n += 1
+        if n / 1 == 0:  # unreachable, kept for clarity
+            continue
+        ttr = len(types) / n
+        if ttr <= _MTLD_THRESHOLD:
+            factors += 1
+            types = set()
+            n = 0
+    # Trailing partial factor — linear interpolation toward the threshold.
+    if n > 0:
+        ttr = len(types) / n
+        partial = (1 - ttr) / (1 - _MTLD_THRESHOLD) if ttr < 1 else 0.0
+        factors += partial
+    if factors == 0:
+        return 0.0
+    return len(tokens) / factors
+
+
+def _mtld_bidirectional(tokens: list[str]) -> float:
+    if len(tokens) < 50:
+        return 0.0
+    fwd = _mtld_one_direction(tokens)
+    rev = _mtld_one_direction(list(reversed(tokens)))
+    if fwd == 0.0 and rev == 0.0:
+        return 0.0
+    if fwd == 0.0:
+        return rev
+    if rev == 0.0:
+        return fwd
+    return (fwd + rev) / 2
+
+
+# Log-odds-ratio with Dirichlet prior (Monroe et al. 2008, simplified).
+# Quantifies which words are CHARACTERISTIC of one user vs another, rather
+# than just frequent. "блять" common in both → filtered out; "ага" only used
+# by one → surfaces.
+
+import math as _math
+
+
+def distinguishing_words(
+    tokens_a: list[str],
+    tokens_b: list[str],
+    top_n: int = 15,
+    alpha: float = 0.01,
+    min_count: int = 3,
+) -> tuple[list[tuple[str, float, int]], list[tuple[str, float, int]]]:
+    """Return (a_distinctive, b_distinctive) — each is [(word, log_odds, count), ...].
+
+    Positive log-odds means the word is more characteristic of `a` than `b`.
+    `min_count` filters rare hapax noise — word must appear ≥min_count times
+    in the user's own tokens to qualify."""
+    if not tokens_a or not tokens_b:
+        return [], []
+
+    from collections import Counter as _C
+
+    ca = _C(tokens_a)
+    cb = _C(tokens_b)
+    Na = sum(ca.values())
+    Nb = sum(cb.values())
+    vocab = set(ca) | set(cb)
+    V = len(vocab)
+    aV = alpha * V
+
+    rows: list[tuple[str, float, int]] = []  # (word, log_odds, max_count)
+    for w in vocab:
+        a_c = ca.get(w, 0)
+        b_c = cb.get(w, 0)
+        if a_c < min_count and b_c < min_count:
+            continue
+        # smoothed proportions
+        pa = (a_c + alpha) / (Na + aV)
+        pb = (b_c + alpha) / (Nb + aV)
+        if pa <= 0 or pb <= 0:
+            continue
+        lo = _math.log(pa / pb)
+        rows.append((w, lo, max(a_c, b_c)))
+
+    a_dist = sorted([r for r in rows if r[1] > 0], key=lambda r: -r[1])[:top_n]
+    b_dist = sorted([r for r in rows if r[1] < 0], key=lambda r: r[1])[:top_n]
+    # Flip sign on b side so callers see positive numbers in both columns.
+    b_dist = [(w, -lo, c) for (w, lo, c) in b_dist]
+    return a_dist, b_dist
+
+
 def _extract_contacts(text: str) -> tuple[list[str], list[str]]:
     emails: list[str] = []
     for e in re.findall(r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}", text):
         if validate_email(e, verify=False):
             emails.append(e)
     phones: list[str] = []
-    for p in re.findall(
-        r"\+?[0-9]{1,3}?[-. (]?[0-9]{1,4}[-. )]?[0-9]{1,4}[-. ]?[0-9]{1,9}", text
-    ):
+    for p in re.findall(r"\+?[0-9]{1,3}?[-. (]?[0-9]{1,4}[-. )]?[0-9]{1,4}[-. ]?[0-9]{1,9}", text):
         try:
             parsed = phonenumbers.parse(p, None)
             if phonenumbers.is_valid_number(parsed):
@@ -189,13 +303,26 @@ def analyze(messages: list[dict], most_com: int = 30) -> WordsResult:
     else:
         scores = []  # leave placeholder zeros
 
-    # Per-user aggregates
+    # Per-user aggregates. Sentiment is averaged WEIGHTED by token count so
+    # one-word "ага" doesn't equal a paragraph. Falls back to plain mean for
+    # very short fragments (avoids div-by-zero).
     users: dict[str, UserStats] = {}
     all_tokens: list[str] = []
+    weighted_chat_num = 0.0
+    weighted_chat_den = 0.0
     for uid, msgs in user_msgs.items():
         msgs_t = [tuple(r) for r in msgs]
-        sentiments = [s for _, s in msgs_t if isinstance(s, float)]
-        avg = sum(sentiments) / len(sentiments) if sentiments else 0.0
+        weighted_num = 0.0
+        weighted_den = 0.0
+        for txt, s in msgs_t:
+            if not isinstance(s, float):
+                continue
+            w = max(len(txt.split()), 1)
+            weighted_num += s * w
+            weighted_den += w
+        avg = weighted_num / weighted_den if weighted_den else 0.0
+        weighted_chat_num += weighted_num
+        weighted_chat_den += weighted_den
         try:
             top, tokens = nltk_analyse.analyse(msgs_t, most_com)
         except Exception:
@@ -209,18 +336,17 @@ def analyze(messages: list[dict], most_com: int = 30) -> WordsResult:
             top_words=list(top),
             total_tokens=len(tokens),
             unique_tokens=len(set(tokens)),
+            _tokens=list(tokens),
         )
 
-    # Chat-wide aggregates: average across all fragment scores (not per-word).
+    # Chat-wide aggregates: weighted-average sentiment so long messages
+    # carry more weight than one-word reactions.
     try:
         chat_top, _ = nltk_analyse.analyse_all(all_tokens, most_com)
     except Exception:
         chat_top = []
     chat_top_pairs = list(chat_top)
-    if scores:
-        chat_avg = sum(scores) / len(scores)
-    else:
-        chat_avg = 0.0
+    chat_avg = weighted_chat_num / weighted_chat_den if weighted_chat_den else 0.0
 
     return WordsResult(
         users=users,
