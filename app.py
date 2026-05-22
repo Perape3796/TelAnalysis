@@ -31,9 +31,6 @@ from analysis import (
 from analysis import mat as mat_mod
 from analysis import media as media_mod
 from analysis import monologues as monologues_mod
-from analysis import (
-    render as render_mod,
-)
 from analysis import stickers as stickers_mod
 from analysis import theme as theme_mod
 from analysis import (
@@ -68,6 +65,80 @@ def _df(data, *args, height=None, **kwargs):
     if isinstance(height, int) and hasattr(data, "__len__"):
         height = min(38 + max(len(data), 1) * 35, height)
     return st.dataframe(data, *args, height=height, **kwargs)
+
+
+@st.fragment
+def _per_user_words_fragment(res):
+    """Per-user picker + content for the Words tab — wrapped in a fragment so
+    changing the selected user re-runs ONLY this section, not the whole tab
+    (wordcloud, top-words bar, phrases, sentiment-over-time don't depend on
+    the pick). Before this, every selectbox change re-ran the full ~5s tab
+    cycle including all plotly chart rebuilds.
+    """
+    if not res.users:
+        return
+    st.subheader(i18n.t("По участникам"))
+    user_options = sorted(res.users.values(), key=lambda u: -len(u.messages))
+    pick = st.selectbox(
+        i18n.t("Участник"),
+        options=user_options,
+        format_func=lambda u: f"{u.name} · {i18n.n_messages(len(u.messages))}",
+    )
+    if pick is None:
+        return
+    cu1, cu2 = st.columns(2)
+    with cu1:
+        if res.sentiment_available:
+            st.caption(
+                i18n.t(
+                    "Средний сентимент: {s} ⚠ не учитывает сарказм/шутки/слэнг"
+                ).format(s=f"{pick.avg_sentiment:+.2f}")
+            )
+        if pick.top_words:
+            tw = pd.DataFrame(pick.top_words, columns=["word", "count"])
+            _df(tw, width="stretch", hide_index=True, height=300)
+    with cu2:
+        if res.sentiment_available:
+            m_df = pd.DataFrame(pick.messages, columns=["text", "sentiment"])
+        else:
+            m_df = pd.DataFrame(
+                [(t,) for t, _ in pick.messages],
+                columns=["text"],
+            )
+        SHOW_N = 200
+        q = st.text_input(
+            i18n.t("Поиск по сообщениям"),
+            placeholder=i18n.t("часть текста…"),
+            key=f"msg_search_{pick.name}",
+        )
+        if q.strip():
+            matches = m_df[m_df["text"].str.contains(q, case=False, na=False, regex=False)]
+            m_df_view = matches.head(SHOW_N)
+            st.caption(
+                i18n.t("Найдено {n} (показаны первые {k})").format(
+                    n=f"{len(matches):,}".replace(",", " "),
+                    k=min(len(matches), SHOW_N),
+                )
+            )
+        else:
+            m_df_view = m_df.tail(SHOW_N)
+            st.caption(
+                i18n.t(
+                    "Последние {k} из {n} · введи поиск чтобы найти конкретное"
+                ).format(
+                    k=min(SHOW_N, len(m_df)),
+                    n=f"{len(m_df):,}".replace(",", " "),
+                )
+            )
+        _df(
+            m_df_view,
+            width="stretch",
+            hide_index=True,
+            height=400,
+            column_config={
+                "text": st.column_config.TextColumn(width="large"),
+            },
+        )
 
 
 # Sidebar — file picker collapses after a file is loaded.
@@ -953,7 +1024,7 @@ for tab, (_, key) in zip(tabs, tab_specs):
 
             st.subheader(i18n.t("Топ {n} слов по чату").format(n=len(res.chat_top_words)))
             if res.chat_top_words:
-                wc_png = render_mod.wordcloud_png(res.chat_top_words)
+                wc_png = ui_cache.wordcloud(cache_key, res.chat_top_words)
                 if wc_png:
                     st.image(wc_png, caption=i18n.t("Облако слов (по всему чату)"))
 
@@ -1254,86 +1325,7 @@ for tab, (_, key) in zip(tabs, tab_specs):
                     height=240,
                 )
 
-            if res.users:
-                st.subheader(i18n.t("По участникам"))
-                user_options = sorted(
-                    res.users.values(),
-                    key=lambda u: -len(u.messages),
-                )
-                pick = st.selectbox(
-                    i18n.t("Участник"),
-                    options=user_options,
-                    format_func=lambda u: f"{u.name} · {i18n.n_messages(len(u.messages))}",
-                )
-                if pick is not None:
-                    cu1, cu2 = st.columns(2)
-                    with cu1:
-                        if res.sentiment_available:
-                            st.caption(
-                                i18n.t(
-                                    "Средний сентимент: {s} ⚠ не учитывает сарказм/шутки/слэнг"
-                                ).format(s=f"{pick.avg_sentiment:+.2f}")
-                            )
-                        if pick.top_words:
-                            tw = pd.DataFrame(pick.top_words, columns=["word", "count"])
-                            _df(
-                                tw,
-                                width="stretch",
-                                hide_index=True,
-                                height=300,
-                            )
-                    with cu2:
-                        if res.sentiment_available:
-                            m_df = pd.DataFrame(
-                                pick.messages,
-                                columns=["text", "sentiment"],
-                            )
-                        else:
-                            m_df = pd.DataFrame(
-                                [(t,) for t, _ in pick.messages],
-                                columns=["text"],
-                            )
-                        # Search-driven view: shipping 9000+ rows of text to
-                        # Glide Data Grid froze the main thread for ~30s on
-                        # selectbox changes. Default to the last N most-recent
-                        # messages, give a text filter for the rest — almost
-                        # nobody scrolls a 9000-row table, they look up a phrase.
-                        SHOW_N = 200
-                        q = st.text_input(
-                            i18n.t("Поиск по сообщениям"),
-                            placeholder=i18n.t("часть текста…"),
-                            key=f"msg_search_{pick.name}",
-                        )
-                        if q.strip():
-                            matches = m_df[
-                                m_df["text"].str.contains(q, case=False, na=False, regex=False)
-                            ]
-                            m_df_view = matches.head(SHOW_N)
-                            st.caption(
-                                i18n.t("Найдено {n} (показаны первые {k})").format(
-                                    n=f"{len(matches):,}".replace(",", " "),
-                                    k=min(len(matches), SHOW_N),
-                                )
-                            )
-                        else:
-                            m_df_view = m_df.tail(SHOW_N)
-                            st.caption(
-                                i18n.t(
-                                    "Последние {k} из {n} · введи поиск чтобы найти конкретное"
-                                ).format(
-                                    k=min(SHOW_N, len(m_df)),
-                                    n=f"{len(m_df):,}".replace(",", " "),
-                                )
-                            )
-                        _df(
-                            m_df_view,
-                            width="stretch",
-                            hide_index=True,
-                            height=400,
-                            column_config={
-                                "text": st.column_config.TextColumn(width="large"),
-                            },
-                        )
+            _per_user_words_fragment(res)
 
             if res.emails or res.phones:
                 with st.expander(

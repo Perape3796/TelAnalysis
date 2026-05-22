@@ -35,6 +35,9 @@ from analysis import (
     reciprocity as reciprocity_mod,
 )
 from analysis import (
+    render as render_mod,
+)
+from analysis import (
     sessions as sessions_mod,
 )
 from analysis import (
@@ -143,3 +146,9 @@ def reciprocity(cache_key: str, _messages: list):
 @st.cache_data(show_spinner="Filtering by date…")
 def filter_by_date(cache_key: str, _messages: list, from_d: str, to_d: str):
     return overview.filter_by_date(_messages, from_d, to_d)
+
+
+@st.cache_data(show_spinner="Rendering wordcloud…")
+def wordcloud(cache_key: str, words_with_counts: list[tuple[str, int]]) -> bytes | None:
+    # Pure tuple list → hashable → safe under cache_data; cache_key scopes by chat.
+    return render_mod.wordcloud_png(words_with_counts)
