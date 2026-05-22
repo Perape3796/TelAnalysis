@@ -133,7 +133,7 @@ NLTK data (`stopwords`, `punkt_tab`) downloads automatically on the first word-a
 There's a generator for two synthetic exports — a 7-person studio chat and a 1-on-1 — purely for previewing the dashboard:
 
 ```bash
-python3 tools/gen_demo_data.py   # writes demo/group_pixelfox.json + demo/personal_anya.json
+python3 tools/gen_demo_data.py   # writes demo/group_demo.json + demo/personal_demo.json
 streamlit run app.py             # then point the sidebar at one of those paths
 ```
 

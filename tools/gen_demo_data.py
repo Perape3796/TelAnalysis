@@ -1,8 +1,8 @@
 """Generate synthetic Telegram exports for README screenshots.
 
 Writes two files:
-  demo/group_pixelfox.json  — 7-person indie gamedev studio chat, ~2 years
-  demo/personal_anya.json   — 2-person 1-on-1 (long-distance friends), ~1.5 years
+  demo/group_demo.json     — 7-person indie gamedev studio chat, ~2 years
+  demo/personal_demo.json  — 2-person 1-on-1 (long-distance friends), ~1.5 years
 
 No real conversations are referenced. All content is sampled from vocab pools
 seeded with a fixed RNG so output is deterministic.
@@ -341,7 +341,7 @@ STICKER_EMOJIS = [
 ]
 
 LINKS = [
-    "https://github.com/pixelfox/engine",
+    "https://github.com/example/engine",
     "https://store.steampowered.com/app/0000/",
     "https://www.gamedev.net/articles/",
     "https://www.reddit.com/r/gamedev/",
@@ -365,7 +365,7 @@ GROUP_USERS = [
 
 GROUP_START = date(2024, 1, 15)
 GROUP_END = date(2026, 5, 1)
-GROUP_NAME = "Pixelfox Studio · core team"
+GROUP_NAME = "Demo Studio · team"
 GROUP_TYPE = "private_supergroup"
 
 # 1-on-1 config
@@ -377,7 +377,7 @@ PERSONAL_OTHER_NAME = "Аня"
 
 PERSONAL_START = date(2024, 10, 1)
 PERSONAL_END = date(2026, 5, 1)
-PERSONAL_NAME = "Аня"
+PERSONAL_NAME = "Demo Friend"
 PERSONAL_TYPE = "personal_chat"
 
 # 1-on-1 vocabulary (warmer/personal, less devspeak)
@@ -665,8 +665,6 @@ def gen_group_messages():
 
     target_per_day_avg = 95
 
-    user_names = [u[1] for u in GROUP_USERS]
-    user_ids = [u[0] for u in GROUP_USERS]
     user_weights = [u[2] for u in GROUP_USERS]
 
     for day_offset in range(total_days):
@@ -694,7 +692,7 @@ def gen_group_messages():
                 "id": msg_id,
                 "type": "message",
                 "date": ts.strftime("%Y-%m-%dT%H:%M:%S"),
-                "date_unixtime": str(int(ts.replace(tzinfo=timezone.utc).timestamp() - 3 * 3600)),
+                "date_unixtime": str(int(ts.replace(tzinfo=timezone.utc).timestamp() - 3 * 3600)),  # noqa: UP017 — timezone.utc keeps py3.10 compat (datetime.UTC is 3.11+)
                 "from": uname,
                 "from_id": uid,
                 "text": text,
@@ -784,7 +782,7 @@ def gen_personal_messages():
                 "id": msg_id,
                 "type": "message",
                 "date": ts.strftime("%Y-%m-%dT%H:%M:%S"),
-                "date_unixtime": str(int(ts.replace(tzinfo=timezone.utc).timestamp() - 3 * 3600)),
+                "date_unixtime": str(int(ts.replace(tzinfo=timezone.utc).timestamp() - 3 * 3600)),  # noqa: UP017 — timezone.utc keeps py3.10 compat (datetime.UTC is 3.11+)
                 "from": uname,
                 "from_id": uid,
                 "text": text,
@@ -829,7 +827,7 @@ def main():
         "id": 7771001,
         "messages": group_msgs,
     }
-    group_path = OUT_DIR / "group_pixelfox.json"
+    group_path = OUT_DIR / "group_demo.json"
     group_path.write_text(json.dumps(group_export, ensure_ascii=False), encoding="utf-8")
     print(f"  group : {len(group_msgs):,} msgs → {group_path}")
 
@@ -840,7 +838,7 @@ def main():
         "id": 7772001,
         "messages": personal_msgs,
     }
-    personal_path = OUT_DIR / "personal_anya.json"
+    personal_path = OUT_DIR / "personal_demo.json"
     personal_path.write_text(json.dumps(personal_export, ensure_ascii=False), encoding="utf-8")
     print(f"  personal : {len(personal_msgs):,} msgs → {personal_path}")
 

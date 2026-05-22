@@ -133,7 +133,7 @@ NLTK-данные (`stopwords`, `punkt_tab`) скачаются автомати
 Есть генератор двух синтетических экспортов — групповой чат из 7 человек и личный диалог — чисто чтобы посмотреть дашборд:
 
 ```bash
-python3 tools/gen_demo_data.py   # создаёт demo/group_pixelfox.json + demo/personal_anya.json
+python3 tools/gen_demo_data.py   # создаёт demo/group_demo.json + demo/personal_demo.json
 streamlit run app.py             # затем укажи путь в сайдбаре
 ```
 
