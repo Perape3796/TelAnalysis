@@ -1293,16 +1293,46 @@ for tab, (_, key) in zip(tabs, tab_specs):
                                 [(t,) for t, _ in pick.messages],
                                 columns=["text"],
                             )
-                        st.caption(
-                            i18n.t("Все {n} фрагментов сообщений").format(
-                                n=f"{len(m_df):,}".replace(",", " ")
-                            )
+                        # Search-driven view: shipping 9000+ rows of text to
+                        # Glide Data Grid froze the main thread for ~30s on
+                        # selectbox changes. Default to the last N most-recent
+                        # messages, give a text filter for the rest — almost
+                        # nobody scrolls a 9000-row table, they look up a phrase.
+                        SHOW_N = 200
+                        q = st.text_input(
+                            i18n.t("Поиск по сообщениям"),
+                            placeholder=i18n.t("часть текста…"),
+                            key=f"msg_search_{pick.name}",
                         )
+                        if q.strip():
+                            matches = m_df[
+                                m_df["text"].str.contains(q, case=False, na=False, regex=False)
+                            ]
+                            m_df_view = matches.head(SHOW_N)
+                            st.caption(
+                                i18n.t("Найдено {n} (показаны первые {k})").format(
+                                    n=f"{len(matches):,}".replace(",", " "),
+                                    k=min(len(matches), SHOW_N),
+                                )
+                            )
+                        else:
+                            m_df_view = m_df.tail(SHOW_N)
+                            st.caption(
+                                i18n.t(
+                                    "Последние {k} из {n} · введи поиск чтобы найти конкретное"
+                                ).format(
+                                    k=min(SHOW_N, len(m_df)),
+                                    n=f"{len(m_df):,}".replace(",", " "),
+                                )
+                            )
                         _df(
-                            m_df,
+                            m_df_view,
                             width="stretch",
                             hide_index=True,
                             height=400,
+                            column_config={
+                                "text": st.column_config.TextColumn(width="large"),
+                            },
                         )
 
             if res.emails or res.phones:
