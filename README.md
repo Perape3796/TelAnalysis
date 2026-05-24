@@ -7,7 +7,7 @@
 # TelAnalysis
 
 [![CI](https://github.com/emylfy/TelAnalysis/actions/workflows/ci.yml/badge.svg)](https://github.com/emylfy/TelAnalysis/actions/workflows/ci.yml)
-![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)
+![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)
 ![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-green.svg)
 ![Built with Streamlit](https://img.shields.io/badge/built%20with-Streamlit-FF4B4B.svg)
 
@@ -62,12 +62,12 @@ After that first launch the app works fully offline. `.streamlit/config.toml` sh
 
 ## Install
 
-Requires **Python 3.10+** (`pandas 3.x` and `streamlit 1.57+` no longer support older versions).
+Requires **Python 3.11+** (`pandas 3.x` and `streamlit 1.57+` no longer support older versions).
 
 ### macOS
 
 ```bash
-# 1. Python 3.10+ via Homebrew (if not already installed)
+# 1. Python 3.11+ via Homebrew (if not already installed)
 brew install python@3.12
 
 # 2. venv + dependencies
@@ -82,11 +82,11 @@ Apple Silicon (M1/M2/M3) works out of the box — `torch`, `pandas`, `wordcloud`
 ### Linux (Ubuntu / Debian)
 
 ```bash
-# 1. System packages — Python 3.10+, venv, build-essential for the occasional source build
+# 1. System packages — Python 3.11+, venv, build-essential for the occasional source build
 sudo apt update
 sudo apt install -y python3 python3-venv python3-pip build-essential
 
-# If your distro ships Python <3.10 (Ubuntu 20.04 and older):
+# If your distro ships Python <3.11 (Ubuntu 22.04 and older):
 #   sudo add-apt-repository ppa:deadsnakes/ppa
 #   sudo apt install -y python3.12 python3.12-venv
 
@@ -120,7 +120,7 @@ pip install -r requirements.txt
 ### Windows (10 / 11)
 
 ```powershell
-# 1. Python 3.10+ — pick ONE
+# 1. Python 3.11+ — pick ONE
 winget install -e --id Python.Python.3.12
 # or the installer from https://www.python.org/downloads/
 #   ✓ tick "Add python.exe to PATH" on the first screen

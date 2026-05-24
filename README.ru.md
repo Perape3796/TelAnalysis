@@ -7,7 +7,7 @@
 # TelAnalysis
 
 [![CI](https://github.com/emylfy/TelAnalysis/actions/workflows/ci.yml/badge.svg)](https://github.com/emylfy/TelAnalysis/actions/workflows/ci.yml)
-![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)
+![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)
 ![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-green.svg)
 ![Built with Streamlit](https://img.shields.io/badge/built%20with-Streamlit-FF4B4B.svg)
 
@@ -62,12 +62,12 @@ UI на **RU / EN** (переключатель в сайдбаре). Содер
 
 ## Установка
 
-Требуется **Python 3.10+** (зависимости `pandas 3.x` и `streamlit 1.57+` старее не поддерживают).
+Требуется **Python 3.11+** (зависимости `pandas 3.x` и `streamlit 1.57+` старее не поддерживают).
 
 ### macOS
 
 ```bash
-# 1. Python 3.10+ через Homebrew (если ещё нет)
+# 1. Python 3.11+ через Homebrew (если ещё нет)
 brew install python@3.12
 
 # 2. venv + зависимости
@@ -82,11 +82,11 @@ Apple Silicon (M1/M2/M3): всё работает из коробки — у `to
 ### Linux (Ubuntu / Debian)
 
 ```bash
-# 1. Системные пакеты — Python 3.10+, venv, build-essential для редких сборок
+# 1. Системные пакеты — Python 3.11+, venv, build-essential для редких сборок
 sudo apt update
 sudo apt install -y python3 python3-venv python3-pip build-essential
 
-# Если в дистрибутиве Python <3.10 (Ubuntu 20.04 и старше):
+# Если в дистрибутиве Python <3.11 (Ubuntu 22.04 и старше):
 #   sudo add-apt-repository ppa:deadsnakes/ppa
 #   sudo apt install -y python3.12 python3.12-venv
 
@@ -120,7 +120,7 @@ pip install -r requirements.txt
 ### Windows (10 / 11)
 
 ```powershell
-# 1. Python 3.10+ — выбери ОДИН способ
+# 1. Python 3.11+ — выбери ОДИН способ
 winget install -e --id Python.Python.3.12
 # или установщик с https://www.python.org/downloads/
 #   ✓ на первом экране поставь галку "Add python.exe to PATH"
