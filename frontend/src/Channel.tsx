@@ -5,6 +5,7 @@ import { api, wordcloudUrl, type Sel } from "@/lib/api"
 import { fmtInt } from "@/lib/i18n"
 import { Card } from "@/components/ui/card"
 import { BarsH } from "@/components/charts"
+import { TabLoading } from "@/components/loading"
 
 export function Channel({ path, sel }: { path: string; sel: Sel }) {
   const { t } = useTranslation()
@@ -12,6 +13,7 @@ export function Channel({ path, sel }: { path: string; sel: Sel }) {
   const c = useQuery({ queryKey: ["channel", ...k], queryFn: () => api.channel(path, sel), enabled: !!sel.chat })
 
   const d = c.data
+  if (c.isLoading) return <TabLoading />
   if (!d) return null
 
   return (

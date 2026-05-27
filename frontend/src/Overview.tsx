@@ -6,6 +6,7 @@ import { api, type LatencyStats, type SessionsStats, type Sel } from "@/lib/api"
 import { fmtInt, humanizeDuration } from "@/lib/i18n"
 import { Card } from "@/components/ui/card"
 import { Bars, Calendar, HourWeekday, MediaPie } from "@/components/charts"
+import { TabLoading } from "@/components/loading"
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
@@ -95,6 +96,8 @@ export function Overview({ path, sel }: { path: string; sel: Sel }) {
   const lat = useQuery({ queryKey: ["lat", ...k], queryFn: () => api.latency(path, sel), enabled: on })
   const sess = useQuery({ queryKey: ["sess", ...k], queryFn: () => api.sessions(path, sel), enabled: on })
   const mono = useQuery({ queryKey: ["mono", ...k], queryFn: () => api.monologues(path, sel), enabled: on })
+
+  if (pd.isLoading) return <TabLoading />
 
   return (
     <div className="space-y-8 pt-2">

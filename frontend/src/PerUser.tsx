@@ -7,6 +7,7 @@ import { fmtInt, timeBucketLabel } from "@/lib/i18n"
 import { Card } from "@/components/ui/card"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Bars, BarsH } from "@/components/charts"
+import { TabLoading } from "@/components/loading"
 
 const TIME_ORDER = ["night", "morning", "day", "evening"]
 const LEN_ORDER = ["<30", "30-100", "100-300", "300+"]
@@ -45,6 +46,7 @@ export function PerUser({ path, sel }: { path: string; sel: Sel }) {
     if (ordered.length && (!uid || !styles?.[uid])) setUid(ordered[0].user_id)
   }, [styles]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  if (speaking.isLoading) return <TabLoading />
   if (!styles || !ordered.length) return null
   const s = (uid && styles[uid]) || ordered[0]
 

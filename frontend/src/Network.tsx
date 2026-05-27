@@ -5,6 +5,7 @@ import { api, type Sel } from "@/lib/api"
 import { fmtInt } from "@/lib/i18n"
 import { Card } from "@/components/ui/card"
 import { Network as NetworkChart } from "@/components/charts"
+import { TabLoading } from "@/components/loading"
 
 export function Network({ path, sel }: { path: string; sel: Sel }) {
   const { t } = useTranslation()
@@ -12,6 +13,7 @@ export function Network({ path, sel }: { path: string; sel: Sel }) {
   const g = useQuery({ queryKey: ["graph", ...k], queryFn: () => api.graph(path, sel), enabled: !!sel.chat })
 
   const d = g.data
+  if (g.isLoading) return <TabLoading />
   if (!d) return null
   if (d.nodes.length < 2) return <div className="py-16 text-center text-sm text-muted-foreground">{t("noData")}</div>
 

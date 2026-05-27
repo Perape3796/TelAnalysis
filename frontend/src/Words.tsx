@@ -6,6 +6,7 @@ import { api, wordcloudUrl, type Sel } from "@/lib/api"
 import { fmtInt } from "@/lib/i18n"
 import { Card } from "@/components/ui/card"
 import { BarsH } from "@/components/charts"
+import { TabLoading } from "@/components/loading"
 
 function Section({ title, hint, children }: { title: string; hint?: string; children: React.ReactNode }) {
   return (
@@ -38,6 +39,7 @@ export function Words({ path, sel }: { path: string; sel: Sel }) {
   const phrases = useQuery({ queryKey: ["phrases", ...k, n], queryFn: () => api.phrases(path, sel, n), enabled: on })
 
   const w = words.data
+  if (words.isLoading) return <TabLoading />
   if (!w) return null
 
   return (
