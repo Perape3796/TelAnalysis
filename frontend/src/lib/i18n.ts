@@ -44,6 +44,7 @@ const ru = {
   // period
   period: "Период",
   allHistory: "Вся история",
+  allChats: "★ Все чаты",
   apply: "Применить",
   reset: "Сбросить",
   fromDate: "С",
@@ -204,6 +205,7 @@ const en: typeof ru = {
   voiceAvg: "Average",
   period: "Period",
   allHistory: "All history",
+  allChats: "★ All chats",
   apply: "Apply",
   reset: "Reset",
   fromDate: "From",

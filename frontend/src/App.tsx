@@ -20,6 +20,7 @@ import { Channel } from "@/Channel"
 import { Onboarding } from "@/Onboarding"
 
 const LS_PATH = "tla.path"
+const COMBINE = "__combine__"
 
 // section name (from API, mirrors loader.sections_for_type) → tab definition
 const TAB_DEFS = [
@@ -154,6 +155,7 @@ function TopBar(props: {
 }) {
   const { t } = useTranslation()
   const { chats, value, onChat, bounds, from, to, onPeriod, lang, onLang, onChangeSource } = props
+  const multi = chats.length > 1
   return (
     <header className="sticky top-0 z-50 border-b border-border bg-background/95 backdrop-blur">
       <div className="mx-auto flex max-w-[1320px] flex-wrap items-center gap-3 px-6 py-2.5">
@@ -162,12 +164,13 @@ function TopBar(props: {
           <span className="text-lg font-bold tracking-tight">TelAnalysis</span>
         </div>
         <div className="ml-auto flex flex-wrap items-center gap-3">
-          {chats.length > 1 && (
+          {multi && (
             <Select value={value} onValueChange={(v) => v && onChat(v)}>
               <SelectTrigger className="w-[240px]">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
+                <SelectItem value={COMBINE}>{t("allChats")}</SelectItem>
                 {chats.map((c) => (
                   <SelectItem key={c.id} value={c.id}>
                     {c.name} · {chatTypeLabel(c.type)}
@@ -288,11 +291,12 @@ export default function App() {
   const kpisQ = useQuery({ queryKey: ["kpis", path, sel, from, to], queryFn: () => api.kpis(path!, period), enabled: !!sel })
   const hlQ = useQuery({ queryKey: ["hl", path, sel, from, to, lang], queryFn: () => api.highlights(path!, period), enabled: !!sel })
 
-  // available tabs for this chat type; reset active tab if it vanished
+  // available tabs for this chat type; reset active tab if it vanished.
+  // The combined archive view is synthetic (multichat → overview + words).
   const availTabs = useMemo(() => {
-    const secs = new Set(selChat?.sections ?? ["overview"])
+    const secs = new Set(sel === COMBINE ? ["overview", "words"] : selChat?.sections ?? ["overview"])
     return TAB_DEFS.filter((d) => secs.has(d.section))
-  }, [selChat])
+  }, [selChat, sel])
   useEffect(() => {
     if (!availTabs.some((d) => d.id === tab)) setTab(availTabs[0]?.id ?? "overview")
   }, [availTabs, tab])
