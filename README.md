@@ -144,6 +144,37 @@ In Command Prompt instead: `.\.venv\Scripts\activate.bat`. The Microsoft Store b
 
 ## Run
 
+TelAnalysis ships **two front-ends over the same Python analysis engine**. The
+modern React UI is the recommended way to run it; the Streamlit app remains
+available and identical in analytics.
+
+### Modern UI — React + FastAPI (recommended)
+
+A single local server serves a fast React SPA and the analysis API
+same-origin — your export is read locally and never leaves the machine.
+Requires **Node.js 20+** (for a one-time frontend build) on top of the Python
+setup above.
+
+```bash
+source .venv/bin/activate            # Python deps from Install above
+pip install -r api/requirements.txt  # FastAPI + uvicorn
+./run.sh                             # builds the SPA on first launch, then serves it
+```
+
+Open <http://127.0.0.1:8000>. On the landing screen paste a path to your
+`result.json` (or open a bundled demo). Pass a port (`./run.sh 9000`) or force
+a fresh build (`./run.sh --rebuild`).
+
+For frontend work with hot-reload, run the two dev servers separately — Vite
+proxies `/api` to the backend:
+
+```bash
+.venv/bin/uvicorn api.main:app --reload --port 8000   # terminal 1 — API
+cd frontend && npm install && npm run dev             # terminal 2 — http://localhost:5173
+```
+
+### Classic UI — Streamlit
+
 ```bash
 source .venv/bin/activate   # if not already active
 streamlit run app.py

@@ -18,10 +18,12 @@ from __future__ import annotations
 import os
 from dataclasses import asdict, is_dataclass
 from functools import lru_cache
+from pathlib import Path
 from typing import Any
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Response
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
 from analysis import anniversaries as anniversaries_mod
 from analysis import chains as chains_mod
@@ -455,3 +457,12 @@ def channel_wordcloud(
 @app.get("/api/health")
 def health():
     return {"ok": True}
+
+
+# --- serve the built SPA (prod) ---
+# When `frontend/dist` exists, mount it at root so a single `uvicorn` serves
+# both the API (/api/*, registered above) and the React app same-origin. In
+# dev this directory is absent; the Vite dev server proxies /api → :8000.
+_DIST = Path(__file__).resolve().parent.parent / "frontend" / "dist"
+if _DIST.is_dir():
+    app.mount("/", StaticFiles(directory=str(_DIST), html=True), name="spa")

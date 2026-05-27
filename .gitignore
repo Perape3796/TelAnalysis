@@ -27,6 +27,10 @@ Thumbs.db
 *.swp
 *.swo
 
+# Frontend build artifacts / deps (built by run.sh; frontend/.gitignore also covers these)
+frontend/node_modules/
+frontend/dist/
+
 # nltk data (downloaded at first run)
 nltk_data/
 .ruff_cache/
