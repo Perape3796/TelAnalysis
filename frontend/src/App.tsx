@@ -1,26 +1,13 @@
 import { useEffect, useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { useTranslation } from "react-i18next"
-import {
-  Area,
-  AreaChart,
-  CartesianGrid,
-  ResponsiveContainer,
-  Tooltip,
-  XAxis,
-  YAxis,
-} from "recharts"
 
 import { api, type Chat, type Hero, type Highlight, type Kpis } from "@/lib/api"
 import i18n, { chatTypeLabel, fmtInt } from "@/lib/i18n"
 import { Card } from "@/components/ui/card"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Overview } from "@/Overview"
 
 const DEMO_PATH = "demo/personal_demo.json"
 
@@ -71,9 +58,7 @@ function TopBar(props: {
                 key={l}
                 onClick={() => onLang(l)}
                 className={`rounded-md px-3 py-1 text-sm transition-colors ${
-                  lang === l
-                    ? "bg-primary text-primary-foreground"
-                    : "text-muted-foreground hover:text-foreground"
+                  lang === l ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"
                 }`}
               >
                 {l.toUpperCase()}
@@ -101,21 +86,19 @@ function HeroBlock({ hero }: { hero: Hero }) {
   )
 }
 
-function KpiCards({ kpis, lang }: { kpis: Kpis; lang: string }) {
+function KpiCards({ kpis }: { kpis: Kpis }) {
   const { t } = useTranslation()
   const items = [
-    { label: t("messages"), value: fmtInt(kpis.total_messages, lang) },
-    { label: t("participants"), value: fmtInt(kpis.unique_users, lang) },
-    { label: t("daysActive"), value: fmtInt(kpis.days_active, lang) },
-    { label: t("media"), value: fmtInt(kpis.media_messages, lang) },
+    { label: t("messages"), value: fmtInt(kpis.total_messages) },
+    { label: t("participants"), value: fmtInt(kpis.unique_users) },
+    { label: t("daysActive"), value: fmtInt(kpis.days_active) },
+    { label: t("media"), value: fmtInt(kpis.media_messages) },
   ]
   return (
     <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
       {items.map((it) => (
         <Card key={it.label} className="gap-1 border-border bg-card px-4 py-3">
-          <div className="text-[0.7rem] font-semibold uppercase tracking-wide text-muted-foreground">
-            {it.label}
-          </div>
+          <div className="text-[0.7rem] font-semibold uppercase tracking-wide text-muted-foreground">{it.label}</div>
           <div className="text-2xl font-semibold tabular-nums">{it.value}</div>
         </Card>
       ))}
@@ -123,7 +106,7 @@ function KpiCards({ kpis, lang }: { kpis: Kpis; lang: string }) {
   )
 }
 
-function Highlights({ items }: { items: Highlight[] }) {
+function HighlightsRow({ items }: { items: Highlight[] }) {
   const { t } = useTranslation()
   if (!items.length) return null
   return (
@@ -131,13 +114,8 @@ function Highlights({ items }: { items: Highlight[] }) {
       <h2 className="text-sm font-semibold">{t("highlights")}</h2>
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
         {items.map((h) => (
-          <Card
-            key={h.label}
-            className="gap-1 border-border border-l-2 border-l-primary/45 bg-card px-4 py-3"
-          >
-            <div className="text-[0.7rem] font-semibold uppercase tracking-wide text-muted-foreground">
-              {h.label}
-            </div>
+          <Card key={h.label} className="gap-1 border-border border-l-2 border-l-primary/45 bg-card px-4 py-3">
+            <div className="text-[0.7rem] font-semibold uppercase tracking-wide text-muted-foreground">{h.label}</div>
             <div className="text-lg font-semibold">{h.value}</div>
             <div className="text-xs text-muted-foreground">{h.sub}</div>
           </Card>
@@ -147,32 +125,8 @@ function Highlights({ items }: { items: Highlight[] }) {
   )
 }
 
-function Timeline({ data }: { data: [string, number][] }) {
-  const rows = data.map(([date, messages]) => ({ date, messages }))
-  return (
-    <ResponsiveContainer width="100%" height={300}>
-      <AreaChart data={rows} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
-        <defs>
-          <linearGradient id="fill" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="var(--chart-1)" stopOpacity={0.25} />
-            <stop offset="100%" stopColor="var(--chart-1)" stopOpacity={0.02} />
-          </linearGradient>
-        </defs>
-        <CartesianGrid stroke="rgba(255,255,255,0.06)" vertical={false} />
-        <XAxis dataKey="date" tick={{ fill: "#9ca3af", fontSize: 11 }} minTickGap={48} stroke="rgba(255,255,255,0.08)" />
-        <YAxis tick={{ fill: "#9ca3af", fontSize: 11 }} width={36} stroke="rgba(255,255,255,0.08)" />
-        <Tooltip
-          contentStyle={{
-            background: "#14161d",
-            border: "1px solid rgba(255,255,255,0.1)",
-            borderRadius: 8,
-            color: "#e5e7eb",
-          }}
-        />
-        <Area type="monotone" dataKey="messages" stroke="var(--chart-1)" strokeWidth={1.5} fill="url(#fill)" />
-      </AreaChart>
-    </ResponsiveContainer>
-  )
+function Placeholder({ label }: { label: string }) {
+  return <div className="py-16 text-center text-sm text-muted-foreground">{label} — в разработке…</div>
 }
 
 export default function App() {
@@ -189,24 +143,46 @@ export default function App() {
   const chats = chatsQ.data?.chats ?? []
   const sel = chat ?? chats[0]?.id
 
-  const heroQ = useQuery({ queryKey: ["hero", path, sel, lang], queryFn: () => api.hero(path, sel, lang), enabled: !!sel })
-  const kpisQ = useQuery({ queryKey: ["kpis", path, sel], queryFn: () => api.kpis(path, sel), enabled: !!sel })
-  const hlQ = useQuery({ queryKey: ["hl", path, sel, lang], queryFn: () => api.highlights(path, sel, lang), enabled: !!sel })
-  const pdQ = useQuery({ queryKey: ["pd", path, sel], queryFn: () => api.perDay(path, sel), enabled: !!sel })
+  const heroQ = useQuery({ queryKey: ["hero", path, sel, lang], queryFn: () => api.hero(path, { chat: sel, lang }), enabled: !!sel })
+  const kpisQ = useQuery({ queryKey: ["kpis", path, sel], queryFn: () => api.kpis(path, { chat: sel }), enabled: !!sel })
+  const hlQ = useQuery({ queryKey: ["hl", path, sel, lang], queryFn: () => api.highlights(path, { chat: sel, lang }), enabled: !!sel })
+
+  const tabs = [
+    { id: "overview", label: t("tab_overview") },
+    { id: "network", label: t("tab_network") },
+    { id: "words", label: t("tab_words") },
+    { id: "peruser", label: t("tab_peruser") },
+  ]
 
   return (
     <div className="min-h-screen bg-background text-foreground">
       <TopBar chats={chats} value={sel} onChat={setChat} lang={lang} onLang={setLang} />
       <main className="mx-auto max-w-[1320px] space-y-4 px-6 py-5">
         {heroQ.data && <HeroBlock hero={heroQ.data} />}
-        {kpisQ.data && <KpiCards kpis={kpisQ.data} lang={lang} />}
-        {hlQ.data && <Highlights items={hlQ.data.highlights} />}
-        {pdQ.data && (
-          <section className="space-y-2">
-            <h2 className="text-xl font-semibold tracking-tight">{t("howOften")}</h2>
-            <Timeline data={pdQ.data.per_day} />
-          </section>
-        )}
+        {kpisQ.data && <KpiCards kpis={kpisQ.data} />}
+        {hlQ.data && <HighlightsRow items={hlQ.data.highlights} />}
+
+        <Tabs defaultValue="overview" className="pt-2">
+          <TabsList>
+            {tabs.map((tb) => (
+              <TabsTrigger key={tb.id} value={tb.id}>
+                {tb.label}
+              </TabsTrigger>
+            ))}
+          </TabsList>
+          <TabsContent value="overview">
+            <Overview path={path} sel={{ chat: sel, lang }} />
+          </TabsContent>
+          <TabsContent value="network">
+            <Placeholder label={t("tab_network")} />
+          </TabsContent>
+          <TabsContent value="words">
+            <Placeholder label={t("tab_words")} />
+          </TabsContent>
+          <TabsContent value="peruser">
+            <Placeholder label={t("tab_peruser")} />
+          </TabsContent>
+        </Tabs>
       </main>
     </div>
   )
