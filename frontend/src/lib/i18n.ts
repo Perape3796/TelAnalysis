@@ -37,6 +37,20 @@ const ru = {
   conversations: "Разговоров",
   perConvAvg: "Сообщ./разговор (среднее)",
   longestConv: "Самый долгий",
+  convLength: "Длина разговоров",
+  longestConvs: "Самые долгие разговоры",
+  duration: "Длительность",
+  // latency caveats
+  droppedCap: "{{n}} ответов дольше {{h}} ч не учтены",
+  qaHint: "Сообщения с вопросом («?») и ответы на них — отвечают ли на вопросы быстрее обычного.",
+  qaFaster: "на {{m}} мин быстрее обычного",
+  qaSlower: "на {{m}} мин медленнее обычного",
+  qaSame: "как в среднем",
+  whoToWhomHint: "«Половина быстрее» — медиана: половина ответов приходит быстрее. «90% быстрее» — почти все, кроме самых долгих.",
+  // anniversaries / html
+  annivBase: "🎉 {{days}} {{w}} здесь",
+  annivUpcoming: "ближайший рубеж «{{label}}» через {{n}} дн.",
+  htmlWarning: "Это HTML-экспорт: в нём нет ID участников, поэтому «Сеть» и «По участникам» для групп менее точны. Для полной картины выгрузи JSON.",
   // voice
   voiceMessages: "Голосовые",
   voiceTotal: "Суммарно",
@@ -200,6 +214,18 @@ const en: typeof ru = {
   conversations: "Conversations",
   perConvAvg: "Msgs/conversation (avg)",
   longestConv: "Longest",
+  convLength: "Conversation length",
+  longestConvs: "Longest conversations",
+  duration: "Duration",
+  droppedCap: "{{n}} replies slower than {{h}}h excluded",
+  qaHint: "Messages with a question (“?”) and the replies to them — whether questions get answered faster than usual.",
+  qaFaster: "{{m}} min faster than usual",
+  qaSlower: "{{m}} min slower than usual",
+  qaSame: "about average",
+  whoToWhomHint: "“Half faster” is the median: half of replies arrive sooner. “90% faster” covers all but the slowest.",
+  annivBase: "🎉 {{days}} {{w}} here",
+  annivUpcoming: "next milestone “{{label}}” in {{n}} days",
+  htmlWarning: "This is an HTML export: it has no participant IDs, so Network and Per-user are less accurate for groups. Export JSON for the full picture.",
   voiceMessages: "Voice messages",
   voiceTotal: "Total",
   voiceAvg: "Average",
@@ -352,6 +378,17 @@ const KIND_EN: Record<string, string> = {
 }
 export function mediaKindLabel(code: string): string {
   return (isRu() ? KIND_RU : KIND_EN)[code] ?? code
+}
+
+/** Plural form of "day" — Russian needs день/дня/дней by the number. */
+export function dayWord(n: number): string {
+  if (!isRu()) return n === 1 ? "day" : "days"
+  const m100 = n % 100
+  const m10 = n % 10
+  if (m100 >= 11 && m100 <= 14) return "дней"
+  if (m10 === 1) return "день"
+  if (m10 >= 2 && m10 <= 4) return "дня"
+  return "дней"
 }
 
 export function timeBucketLabel(code: string): string {

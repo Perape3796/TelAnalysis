@@ -3,7 +3,7 @@ import { useQuery } from "@tanstack/react-query"
 import { useTranslation } from "react-i18next"
 
 import { api, type Sel } from "@/lib/api"
-import { fmtInt, timeBucketLabel } from "@/lib/i18n"
+import { dayWord, fmtInt, timeBucketLabel } from "@/lib/i18n"
 import { Card } from "@/components/ui/card"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Bars, BarsH, Box, HourWeekday, Lines, Radar } from "@/components/charts"
@@ -221,8 +221,8 @@ export function PerUser({ path, sel }: { path: string; sel: Sel }) {
         <section className="space-y-3">
           <H3>{t("streaks")}</H3>
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-            <Stat label={t("longestStreak")} value={`${fmtInt(streakQ.data.longest_streak_days)} ${t("days")}`} sub={streakQ.data.longest_streak_start ?? undefined} />
-            <Stat label={t("currentStreak")} value={`${fmtInt(streakQ.data.current_streak_days)} ${t("days")}`} />
+            <Stat label={t("longestStreak")} value={`${fmtInt(streakQ.data.longest_streak_days)} ${dayWord(streakQ.data.longest_streak_days)}`} sub={streakQ.data.longest_streak_start ?? undefined} />
+            <Stat label={t("currentStreak")} value={`${fmtInt(streakQ.data.current_streak_days)} ${dayWord(streakQ.data.current_streak_days)}`} />
             <Stat label={t("activeDays")} value={fmtInt(streakQ.data.total_active_days)} />
           </div>
           {streakQ.data.longest_silences.length > 0 && (

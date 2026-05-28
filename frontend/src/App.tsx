@@ -4,7 +4,7 @@ import { useTranslation } from "react-i18next"
 import { CalendarDays, FolderOpen } from "lucide-react"
 
 import { api, type Chat, type Hero, type Highlight, type Kpis } from "@/lib/api"
-import i18n, { chatTypeLabel, fmtInt } from "@/lib/i18n"
+import i18n, { chatTypeLabel, dayWord, fmtInt, humanizeDuration } from "@/lib/i18n"
 import { Button, buttonVariants } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { cn } from "@/lib/utils"
@@ -205,7 +205,7 @@ function HeroBlock({ hero }: { hero: Hero }) {
   )
 }
 
-function KpiCards({ kpis }: { kpis: Kpis }) {
+function KpiCards({ kpis, voiceSeconds }: { kpis: Kpis; voiceSeconds?: number }) {
   const { t } = useTranslation()
   const items = [
     { label: t("messages"), value: fmtInt(kpis.total_messages) },
@@ -213,8 +213,9 @@ function KpiCards({ kpis }: { kpis: Kpis }) {
     { label: t("daysActive"), value: fmtInt(kpis.days_active) },
     { label: t("media"), value: fmtInt(kpis.media_messages) },
   ]
+  if (voiceSeconds && voiceSeconds > 0) items.push({ label: t("voice"), value: humanizeDuration(voiceSeconds) })
   return (
-    <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+    <div className={`grid grid-cols-2 gap-3 sm:grid-cols-4 ${items.length === 5 ? "lg:grid-cols-5" : ""}`}>
       {items.map((it) => (
         <Card key={it.label} className="gap-1 border-border bg-card px-4 py-3">
           <div className="text-[0.7rem] font-semibold uppercase tracking-wide text-muted-foreground">{it.label}</div>
@@ -290,6 +291,10 @@ export default function App() {
   const heroQ = useQuery({ queryKey: ["hero", path, sel, from, to, lang], queryFn: () => api.hero(path!, period), enabled: !!sel })
   const kpisQ = useQuery({ queryKey: ["kpis", path, sel, from, to], queryFn: () => api.kpis(path!, period), enabled: !!sel })
   const hlQ = useQuery({ queryKey: ["hl", path, sel, from, to, lang], queryFn: () => api.highlights(path!, period), enabled: !!sel })
+  // shares its key with Overview (dedup); only used for the voice KPI card
+  const mediaQ = useQuery({ queryKey: ["media", path, sel, from, to], queryFn: () => api.media(path!, period), enabled: !!sel })
+  const annivQ = useQuery({ queryKey: ["anniv", path, sel, from, to, lang], queryFn: () => api.anniversaries(path!, period), enabled: !!sel })
+  const isHtml = !!chatsQ.data && chatsQ.data.source !== "json"
 
   // available tabs for this chat type; reset active tab if it vanished.
   // The combined archive view is synthetic (multichat → overview + words).
@@ -355,8 +360,20 @@ export default function App() {
         onChangeSource={changeSource}
       />
       <main className="mx-auto max-w-[1320px] space-y-4 px-6 py-5">
+        {isHtml && (
+          <div className="rounded-lg border border-[#F6BD16]/30 bg-[#F6BD16]/10 px-4 py-2.5 text-sm text-[#F6BD16]">
+            {t("htmlWarning")}
+          </div>
+        )}
         {heroQ.data ? <HeroBlock hero={heroQ.data} /> : <HeaderSkeleton />}
-        {kpisQ.data && <KpiCards kpis={kpisQ.data} />}
+        {annivQ.data && annivQ.data.days_since_start > 0 && (
+          <div className="text-sm text-muted-foreground">
+            {t("annivBase", { days: fmtInt(annivQ.data.days_since_start), w: dayWord(annivQ.data.days_since_start) })}
+            {annivQ.data.upcoming_day &&
+              ` · ${t("annivUpcoming", { label: annivQ.data.upcoming_day.label, n: fmtInt(annivQ.data.upcoming_day.days_until ?? 0) })}`}
+          </div>
+        )}
+        {kpisQ.data && <KpiCards kpis={kpisQ.data} voiceSeconds={mediaQ.data?.voice_total_seconds} />}
         {hlQ.data && <HighlightsRow items={hlQ.data.highlights} />}
 
         {sel && (

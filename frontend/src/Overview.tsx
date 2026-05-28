@@ -7,11 +7,15 @@ import { fmtInt, humanizeDuration } from "@/lib/i18n"
 import { Card } from "@/components/ui/card"
 import { Bars, Calendar, HourWeekday, MediaPie } from "@/components/charts"
 import { TabLoading } from "@/components/loading"
+import { Hint } from "@/components/hint"
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+function Section({ title, hint, children }: { title: string; hint?: string; children: React.ReactNode }) {
   return (
     <section className="space-y-3">
-      <h2 className="text-xl font-semibold tracking-tight">{title}</h2>
+      <h2 className="flex items-center gap-2 text-xl font-semibold tracking-tight">
+        {title}
+        {hint && <Hint text={hint} />}
+      </h2>
       {children}
     </section>
   )
@@ -51,6 +55,13 @@ function Timeline({ data }: { data: [string, number][] }) {
 function LatencyBlock({ l }: { l: LatencyStats }) {
   const { t } = useTranslation()
   if (!l.overall_seconds?.length) return null
+  const diff = l.qa_median_seconds - l.median_seconds
+  const qaDelta =
+    Math.abs(diff) < 30
+      ? t("qaSame")
+      : diff < 0
+        ? t("qaFaster", { m: Math.round(-diff / 60) })
+        : t("qaSlower", { m: Math.round(diff / 60) })
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
@@ -58,11 +69,17 @@ function LatencyBlock({ l }: { l: LatencyStats }) {
         <Stat label={t("p90Faster")} value={humanizeDuration(l.p90_seconds)} />
         <Stat label={t("repliesCounted")} value={fmtInt(l.overall_seconds.length)} />
       </div>
+      {l.dropped_over_cap > 0 && (
+        <p className="text-xs text-muted-foreground">{t("droppedCap", { n: fmtInt(l.dropped_over_cap), h: l.cap_hours })}</p>
+      )}
       {l.qa_seconds?.length > 0 && (
         <div className="space-y-2">
-          <div className="text-sm font-semibold">{t("qSection")}</div>
+          <div className="flex items-center gap-2 text-sm font-semibold">
+            {t("qSection")}
+            <Hint text={t("qaHint")} />
+          </div>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-            <Stat label={t("halfFaster")} value={humanizeDuration(l.qa_median_seconds)} />
+            <Stat label={t("halfFaster")} value={humanizeDuration(l.qa_median_seconds)} sub={qaDelta} />
             <Stat label={t("p90Faster")} value={humanizeDuration(l.qa_p90_seconds)} />
             <Stat label={t("qWithAnswer")} value={fmtInt(l.qa_seconds.length)} />
           </div>
@@ -75,11 +92,42 @@ function LatencyBlock({ l }: { l: LatencyStats }) {
 function SessionsBlock({ s }: { s: SessionsStats }) {
   const { t } = useTranslation()
   if (!s.sessions?.length) return null
+  const buckets = Object.entries(s.duration_buckets ?? {}) as [string, number][]
+  const longest = [...s.sessions]
+    .map((se) => ({ ...se, dur: (new Date(se.end).getTime() - new Date(se.start).getTime()) / 1000 }))
+    .sort((a, b) => b.dur - a.dur)
+    .slice(0, 10)
   return (
-    <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-      <Stat label={t("conversations")} value={fmtInt(s.sessions.length)} />
-      <Stat label={t("perConvAvg")} value={s.avg_messages.toFixed(1)} />
-      {s.longest && <Stat label={t("longestConv")} value={`${fmtInt(s.longest.msg_count)}`} sub={s.longest.start.slice(0, 10)} />}
+    <div className="space-y-4">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <Stat label={t("conversations")} value={fmtInt(s.sessions.length)} />
+        <Stat label={t("perConvAvg")} value={s.avg_messages.toFixed(1)} />
+        {s.longest && <Stat label={t("longestConv")} value={`${fmtInt(s.longest.msg_count)}`} sub={s.longest.start.slice(0, 10)} />}
+      </div>
+      {buckets.length > 0 && (
+        <div className="space-y-2">
+          <div className="text-sm font-semibold">{t("convLength")}</div>
+          <Card className="border-border bg-card p-3"><Bars data={buckets} height={220} color="var(--chart-2)" /></Card>
+        </div>
+      )}
+      {longest.length > 0 && (
+        <div className="space-y-2">
+          <div className="text-sm font-semibold">{t("longestConvs")}</div>
+          <Card className="overflow-hidden border-border bg-card">
+            <table className="w-full text-sm">
+              <tbody>
+                {longest.map((se, i) => (
+                  <tr key={i} className="border-b border-border/60 last:border-0">
+                    <td className="px-4 py-2 text-muted-foreground">{se.start.slice(0, 16).replace("T", " ")}</td>
+                    <td className="px-4 py-2 text-right tabular-nums">{fmtInt(se.msg_count)} · {t("messages").toLowerCase()}</td>
+                    <td className="px-4 py-2 text-right tabular-nums text-muted-foreground">{humanizeDuration(se.dur)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </Card>
+        </div>
+      )}
     </div>
   )
 }
@@ -142,7 +190,7 @@ export function Overview({ path, sel }: { path: string; sel: Sel }) {
       </Section>
 
       {lat.data && lat.data.overall_seconds.length > 0 && (
-        <Section title={t("whoToWhom")}>
+        <Section title={t("whoToWhom")} hint={t("whoToWhomHint")}>
           <LatencyBlock l={lat.data} />
         </Section>
       )}
