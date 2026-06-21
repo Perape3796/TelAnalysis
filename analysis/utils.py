@@ -1,6 +1,7 @@
 import json
 import re
 import string
+from pathlib import Path
 
 import emoji
 import jmespath
@@ -30,19 +31,26 @@ DEFAULT_CONF = {
     "most_com_channel": 100,
 }
 
+# Anchored to the repo root (parent of analysis/) so reads/writes don't depend
+# on the current working directory.
+CONFIG_PATH = Path(__file__).resolve().parents[1] / "config.json"
+
 
 def read_conf(option):
     try:
-        with open("config.json") as f:
+        with open(CONFIG_PATH) as f:
             data = json.load(f)
         return jmespath.search(option, data)
     except (FileNotFoundError, json.JSONDecodeError):
-        write_conf(DEFAULT_CONF)
+        try:
+            write_conf(DEFAULT_CONF)
+        except OSError:
+            pass  # read-only / non-writable dir (e.g. non-root in Docker) — run on defaults
         return DEFAULT_CONF.get(option)
 
 
 def write_conf(dct: dict) -> None:
-    with open("config.json", "w") as fw:
+    with open(CONFIG_PATH, "w") as fw:
         json.dump(dct, fw)
 
 

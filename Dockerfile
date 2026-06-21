@@ -47,9 +47,8 @@ RUN if [ "$WITH_SENTIMENT" = "1" ]; then \
 # landing screen's "Try demo" buttons work inside the container).
 COPY analysis/ ./analysis/
 COPY api/ ./api/
-COPY ui/ ./ui/
+COPY i18n/ ./i18n/
 COPY demo/ ./demo/
-COPY nltk_analyse.py stopwords_list.py utils.py config.json ./
 COPY --from=frontend /build/frontend/dist ./frontend/dist
 
 USER app

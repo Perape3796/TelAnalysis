@@ -10,7 +10,7 @@ from urllib.parse import urlparse
 
 import jmespath
 
-from ui import i18n
+import i18n
 
 
 @dataclass

@@ -14,8 +14,8 @@ import nltk
 from nltk import word_tokenize
 from nltk.corpus import stopwords as nltk_stopwords
 
-import stopwords_list
-from utils import remove_emojis, spec_chars
+from . import stopwords_list
+from .utils import remove_emojis, spec_chars
 
 _RUS_SW: set[str] | None = None
 _ENG_SW: set[str] | None = None

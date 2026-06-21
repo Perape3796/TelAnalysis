@@ -6,7 +6,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-import utils
+from analysis import utils
 
 # remove_emojis
 
@@ -94,7 +94,7 @@ def test_clear_user_handles_int():
 
 
 def test_read_conf_falls_back_to_defaults_when_missing(tmp_path: Path, monkeypatch):
-    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(utils, "CONFIG_PATH", tmp_path / "config.json")
     val = utils.read_conf("most_com")
     assert val == utils.DEFAULT_CONF["most_com"]
     # write_conf should have created the file
@@ -102,14 +102,14 @@ def test_read_conf_falls_back_to_defaults_when_missing(tmp_path: Path, monkeypat
 
 
 def test_write_conf_then_read_conf_roundtrip(tmp_path: Path, monkeypatch):
-    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(utils, "CONFIG_PATH", tmp_path / "config.json")
     utils.write_conf({"select_type_stem": "On", "most_com": 50, "most_com_channel": 200})
     assert utils.read_conf("select_type_stem") == "On"
     assert utils.read_conf("most_com") == 50
 
 
 def test_read_conf_recovers_from_corrupted_file(tmp_path: Path, monkeypatch):
-    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(utils, "CONFIG_PATH", tmp_path / "config.json")
     (tmp_path / "config.json").write_text("not json at all", encoding="utf-8")
     val = utils.read_conf("most_com")
     assert val == utils.DEFAULT_CONF["most_com"]

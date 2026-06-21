@@ -5,7 +5,7 @@ hour×weekday grid, emojis, media, streaks, latency) and turns them into:
 - a hero prose paragraph ("За 847 дней вы написали 23 451 сообщений…"),
 - a small set of "highlight" cards (peak day, peak hour, top emoji, voice).
 
-Pure functions — no Streamlit, no IO. Strings flow through ui.i18n so the
+Pure functions — no Streamlit, no IO. Strings flow through i18n so the
 same composer renders RU or EN depending on the active language.
 """
 
@@ -15,7 +15,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
-from ui import i18n
+import i18n
 
 
 @dataclass

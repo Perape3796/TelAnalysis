@@ -6,8 +6,8 @@ from nltk.corpus import stopwords
 from nltk.probability import FreqDist
 from nltk.stem.snowball import SnowballStemmer
 
-import stopwords_list
-from utils import read_conf, remove_chars_from_text, spec_chars
+from . import stopwords_list
+from .utils import read_conf, remove_chars_from_text, spec_chars
 
 
 def _ensure_nltk_data() -> None:

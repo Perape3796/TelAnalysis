@@ -28,6 +28,7 @@ from fastapi import Depends, FastAPI, File, HTTPException, Query, Response, Uplo
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
+import i18n
 from analysis import anniversaries as anniversaries_mod
 from analysis import chains as chains_mod
 from analysis import channel as channel_mod
@@ -48,7 +49,6 @@ from analysis import speaking as speaking_mod
 from analysis import stickers as stickers_mod
 from analysis import timing as timing_mod
 from analysis import words as words_mod
-from ui import i18n
 
 
 async def _set_lang(lang: str = Query("ru")) -> str:

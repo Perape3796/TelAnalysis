@@ -13,8 +13,7 @@ import jmespath
 import phonenumbers
 from validate_email import validate_email
 
-import nltk_analyse
-
+from . import nltk_analyse
 from . import sentiment as _sentiment_mod
 
 _action_map = {

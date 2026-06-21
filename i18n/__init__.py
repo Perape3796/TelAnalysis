@@ -5,7 +5,7 @@ contextvar (set by the FastAPI `?lang=` dependency); outside a request
 (tests, CLI) it falls back to "ru" so pure-function tests stay green.
 
 Usage:
-    from ui.i18n import t, plural, n_days, format_day, weekday_name
+    from i18n import t, plural, n_days, format_day, weekday_name
 
     f"написали {n_messages(74189)} за {n_days(750)}"
 """
