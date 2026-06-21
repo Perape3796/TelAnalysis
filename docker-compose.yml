@@ -1,10 +1,21 @@
 services:
   web:
-    build: .
+    build:
+      context: .
+      # Bake in Russian sentiment (~1GB: torch + transformers). Off by default.
+      # args:
+      #   WITH_SENTIMENT: "1"
     ports:
       - "127.0.0.1:8000:8000"
     # Mount the folder that holds your Telegram export read-only, then paste a
     # path *inside the container* on the landing screen, e.g. /data/result.json.
+    # The bundled demos work out of the box without any mount.
     # volumes:
     #   - /path/to/your/export:/data:ro
+    #   # Persist the model cache across restarts (only used with WITH_SENTIMENT):
+    #   - hf-cache:/home/app/.cache/huggingface
     restart: unless-stopped
+
+# Uncomment together with the hf-cache mount above.
+# volumes:
+#   hf-cache:

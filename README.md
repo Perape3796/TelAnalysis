@@ -158,9 +158,16 @@ Open <http://127.0.0.1:8000>. On the landing screen paste a path to your
 `result.json` (or open a bundled demo). Pass a port (`./run.sh 9000`) or force
 a fresh frontend build (`./run.sh --rebuild`).
 
-> **Docker:** `docker compose up --build`, then open <http://127.0.0.1:8000>.
-> The build bundles the SPA; mount the folder holding your export so a path you
-> paste in the UI resolves inside the container.
+> **Docker:** `docker compose up --build` (or `docker-compose up --build` if you
+> have only the standalone binary, e.g. `brew install docker` without the Compose
+> plugin), then open <http://127.0.0.1:8000>.
+> The image bundles the SPA and the two demos, so the **Try demo** buttons work
+> out of the box. To analyse your own export, mount its folder and paste a path
+> *inside the container* — uncomment the `volumes:` block in `docker-compose.yml`
+> (e.g. `- /path/to/export:/data:ro`), then enter `/data/result.json` in the UI.
+> Russian sentiment (torch + transformers, ~1GB) is off by default — bake it in
+> with `docker build --build-arg WITH_SENTIMENT=1 .` (or uncomment `args:` in the
+> compose file).
 
 For frontend work with hot-reload, run the two dev servers separately — Vite
 proxies `/api` to the backend:

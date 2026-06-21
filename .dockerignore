@@ -13,8 +13,11 @@ frontend/node_modules
 frontend/dist
 frontend/.vite
 
-# Large / local-only data
+# Large / local-only data — but keep the two bundled demos so the landing
+# screen's "Try demo" buttons work inside the container.
 demo/*.json
+!demo/personal_demo.json
+!demo/group_demo.json
 asset
 nltk_data
 docs/screenshots
