@@ -803,6 +803,11 @@ class _PathReq(BaseModel):
     path: str
 
 
+class _RevealReq(BaseModel):
+    path: str
+    folder: str  # chat's relative folder, e.g. "chats/chat_009"
+
+
 @app.get("/api/backup/chats")
 def backup_chats(path: str = _P):
     """All chats in a full export with on-disk size, media breakdown and date
@@ -859,6 +864,20 @@ def backup_empty_trash(req: _PathReq):
     res = backup_mod.empty_trash(req.path)
     _clear_caches()
     return res
+
+
+@app.post("/api/backup/reveal")
+def backup_reveal(req: _RevealReq):
+    """Open a chat's folder in the OS file manager. Read-only — no manage gate,
+    just path existence + the escape guard inside `reveal_folder`."""
+    if not os.path.exists(req.path):
+        raise HTTPException(status_code=404, detail="File not found")
+    try:
+        return backup_mod.reveal_folder(req.path, req.folder)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="unsafe-path")
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail="folder-not-found")
 
 
 @app.get("/api/health")

@@ -363,6 +363,8 @@ export const api = {
   restoreTrash: (path: string, trash_id: string) =>
     post<{ restored_chats: number }>("backup/restore", { path, trash_id }),
   emptyTrash: (path: string) => post<{ freed_bytes: number }>("backup/empty-trash", { path }),
+  revealFolder: (path: string, folder: string) =>
+    post<{ ok: boolean; path: string }>("backup/reveal", { path, folder }),
 }
 
 /** Upload a local file (the browser hides its filesystem path for privacy);

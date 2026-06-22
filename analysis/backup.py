@@ -26,6 +26,8 @@ import json
 import os
 import re
 import shutil
+import subprocess
+import sys
 import time
 from collections import Counter
 from pathlib import Path
@@ -94,6 +96,27 @@ def safe_under_root(root: Path, rel: str) -> Path:
     if not target.is_relative_to(root.resolve()):
         raise ValueError(f"path escapes root: {rel!r}")
     return target
+
+
+def reveal_folder(path: str, rel: str) -> dict[str, Any]:
+    """Open a chat's on-disk folder in the OS file manager (Finder / Explorer /
+    file browser). Read-only: it just launches the system browser on a folder
+    that already exists inside this export. `rel` is the chat's `folder` field
+    (e.g. "chats/chat_009"), validated to stay under the export root."""
+    root = export_root(path)
+    target = safe_under_root(root, rel)  # raises ValueError on path-escape
+    if not target.is_dir():
+        raise FileNotFoundError(str(target))
+    if sys.platform == "darwin":
+        cmd = ["open", str(target)]
+    elif os.name == "nt":
+        cmd = ["explorer", str(target)]
+    else:
+        cmd = ["xdg-open", str(target)]
+    # fire-and-forget: explorer.exe exits non-zero even on success, and we don't
+    # want to block the request on the file manager's lifetime.
+    subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    return {"ok": True, "path": str(target)}
 
 
 # inspection (read-only)

@@ -4,6 +4,7 @@ import { useTranslation } from "react-i18next"
 import {
   AlertTriangle,
   ChevronDown,
+  FolderOpen,
   RotateCcw,
   Scissors,
   Trash2,
@@ -142,6 +143,11 @@ export function ChatManager({ path }: { path: string }) {
       invalidate()
     },
   })
+  // open a chat's folder in the OS file manager (read-only; no trash/mutation)
+  const revealMut = useMutation({
+    mutationFn: (folder: string) => api.revealFolder(path, folder),
+    onError: () => window.alert(t("openFolderFailed")),
+  })
 
   const rows = useMemo(() => chatsQ.data?.chats ?? [], [chatsQ.data])
   const maxDisk = useMemo(() => Math.max(1, ...rows.map((r) => r.disk_bytes)), [rows])
@@ -247,6 +253,33 @@ export function ChatManager({ path }: { path: string }) {
     else {
       setSortKey(k)
       setSortDir(k === "name" || k === "type" ? 1 : -1)
+    }
+  }
+
+  // Roving keyboard focus for the lists: click a row, then ↑/↓ move focus between
+  // rows — scoped to the row's [data-rownav] container, so the page stops
+  // scrolling and the blocks themselves move — and Space/Enter toggle the focused
+  // row. Rows carry tabIndex=-1: click- and arrow-focusable, but out of the Tab
+  // sequence (the per-row checkboxes stay the Tab stops). Pass onToggle only for
+  // non-button rows; native <button> rows handle Space themselves.
+  const onRowKey = (e: React.KeyboardEvent<HTMLElement>, onToggle?: () => void) => {
+    if (e.key === "ArrowDown" || e.key === "ArrowUp" || e.key === "Home" || e.key === "End") {
+      const nav = e.currentTarget.closest<HTMLElement>("[data-rownav]")
+      if (!nav) return
+      const items = Array.from(nav.querySelectorAll<HTMLElement>("[data-row]"))
+      const i = items.indexOf(e.currentTarget)
+      const target =
+        e.key === "ArrowDown" ? items[i + 1]
+        : e.key === "ArrowUp" ? items[i - 1]
+        : e.key === "Home" ? items[0]
+        : items[items.length - 1]
+      if (target) {
+        e.preventDefault()
+        target.focus()
+      }
+    } else if (onToggle && (e.key === " " || e.key === "Enter")) {
+      e.preventDefault()
+      onToggle()
     }
   }
 
@@ -359,7 +392,7 @@ export function ChatManager({ path }: { path: string }) {
         {filtered.length === 0 ? (
           <div className="px-4 py-10 text-center text-sm text-muted-foreground">{t("noChatsFound")}</div>
         ) : (
-          <ol>
+          <ol data-rownav>
             {filtered.map((r) => {
               const sel = selected.has(r.id)
               const isOpen = expanded === r.id
@@ -367,8 +400,14 @@ export function ChatManager({ path }: { path: string }) {
               return (
                 <li key={r.id} className="border-b border-border/50 last:border-0">
                   <div
+                    data-row
+                    role="option"
+                    aria-selected={sel}
+                    tabIndex={-1}
+                    onKeyDown={(e) => onRowKey(e, canManage ? () => toggle(r.id) : undefined)}
                     className={cn(
-                      "relative flex items-center gap-3 px-3 py-2.5 transition-colors",
+                      "relative flex items-center gap-3 px-3 py-2.5 outline-none transition-colors",
+                      "focus:z-10 focus:ring-2 focus:ring-inset focus:ring-ring/60",
                       sel ? "bg-primary/[0.05]" : "hover:bg-muted/20",
                     )}
                   >
@@ -431,12 +470,25 @@ export function ChatManager({ path }: { path: string }) {
                               {mediaLabel(k)} <span className="font-semibold text-foreground tabular-nums">{fmtBytes(r.media[k])}</span>
                             </span>
                           ))}
-                        {canManage && (
-                          <Button variant="outline" size="xs" className="ml-auto" onClick={() => setSlimFor(r)}>
-                            <Scissors className="size-3" />
-                            {t("slim")}
-                          </Button>
-                        )}
+                        <div className="ml-auto flex items-center gap-2">
+                          {r.folder && (
+                            <Button
+                              variant="outline"
+                              size="xs"
+                              disabled={revealMut.isPending}
+                              onClick={() => revealMut.mutate(r.folder!)}
+                            >
+                              <FolderOpen className="size-3" />
+                              {t("openFolder")}
+                            </Button>
+                          )}
+                          {canManage && (
+                            <Button variant="outline" size="xs" onClick={() => setSlimFor(r)}>
+                              <Scissors className="size-3" />
+                              {t("slim")}
+                            </Button>
+                          )}
+                        </div>
                       </div>
                     </div>
                   )}
@@ -499,7 +551,7 @@ export function ChatManager({ path }: { path: string }) {
               {tombs.length === 0 ? (
                 <div className="border-t border-border/50 px-4 py-6 text-center text-sm text-muted-foreground">{t("noChatsFound")}</div>
               ) : (
-                <div className="max-h-80 overflow-auto">
+                <div className="max-h-80 overflow-auto" data-rownav>
                   {tombFamilies.map((f) => {
                     const fam = famTombRows(f)
                     if (fam.length === 0) return null
@@ -524,18 +576,28 @@ export function ChatManager({ path }: { path: string }) {
                             const sel = tombSel.has(r.id)
                             return (
                               <li key={r.id}>
-                                <button
-                                  type="button"
-                                  onClick={() => canManage && toggleTomb(r.id)}
+                                <div
+                                  data-row
+                                  role="option"
+                                  aria-selected={sel}
+                                  tabIndex={-1}
+                                  onClick={() => {
+                                    if (!canManage) return
+                                    // a click that selected text is a copy gesture — don't toggle
+                                    if (window.getSelection()?.toString()) return
+                                    toggleTomb(r.id)
+                                  }}
+                                  onKeyDown={(e) => onRowKey(e, canManage ? () => toggleTomb(r.id) : undefined)}
                                   className={cn(
-                                    "flex w-full items-center gap-3 border-t border-border/30 px-4 py-1.5 text-left transition-colors",
+                                    "flex items-center gap-3 border-t border-border/30 px-4 py-1.5 outline-none transition-colors",
+                                    "focus:relative focus:z-10 focus:ring-2 focus:ring-inset focus:ring-ring/60",
                                     sel ? "bg-primary/[0.05]" : "hover:bg-muted/20",
-                                    !canManage && "cursor-not-allowed",
+                                    canManage ? "cursor-pointer" : "cursor-not-allowed",
                                   )}
                                 >
                                   <Checkbox checked={sel} disabled={!canManage} tabIndex={-1} className="pointer-events-none shrink-0" aria-label={r.name} />
-                                  <span className="min-w-0 flex-1 truncate text-sm" title={r.name}>{r.name}</span>
-                                </button>
+                                  <span className="min-w-0 flex-1 select-text truncate text-sm" title={r.name}>{r.name}</span>
+                                </div>
                               </li>
                             )
                           })}
