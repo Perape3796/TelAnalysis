@@ -8,7 +8,7 @@ plus next upcoming time/count milestone. Pure functions, no IO.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
 import i18n
 
@@ -76,17 +76,18 @@ def compute(
     crossed_days: list[Milestone] = []
     upcoming_day: Milestone | None = None
     for n in _DAY_MILESTONES:
-        from datetime import timedelta as _td
-
-        when = start + _td(days=n)
-        if n <= days_since:
+        # Year milestones land on the true calendar anniversary, not start+N*365
+        # (which drifts a day per leap year — "5 лет" off by one). Day milestones
+        # are unaffected. Comparing dates (not day counts) keeps both consistent.
+        when = _milestone_date(start, n)
+        if when <= today:
             crossed_days.append(Milestone(label=_label_days(n), value=n, when=when))
         elif upcoming_day is None:
             upcoming_day = Milestone(
                 label=_label_days(n),
                 value=n,
                 when=when,
-                days_until=n - days_since,
+                days_until=(when - today).days,
             )
 
     # Walk per_day to find the date each count milestone was first crossed.
@@ -129,6 +130,18 @@ def compute(
 
 # Day thresholds that read better as round years than as a day count.
 _DAY_AS_YEARS = {365: 1, 730: 2, 1825: 5, 3650: 10}
+
+
+def _milestone_date(start: date, n: int) -> date:
+    """Calendar date of a milestone. Year milestones (1/2/5/10 yr) use real
+    calendar arithmetic so leap years don't shift them; others are start + N days."""
+    y = _DAY_AS_YEARS.get(n)
+    if y:
+        try:
+            return start.replace(year=start.year + y)
+        except ValueError:  # Feb 29 start with no Feb 29 that year → roll to Mar 1
+            return start + timedelta(days=n)
+    return start + timedelta(days=n)
 
 
 def _label_days(n: int) -> str:

@@ -9,6 +9,8 @@ Pure functions; no UI."""
 
 from __future__ import annotations
 
+from .utils import display_name
+
 from dataclasses import dataclass, field
 from datetime import datetime
 
@@ -61,7 +63,7 @@ def analyze(
         ts = _parse(m.get("date"))
         if ts is None:
             continue
-        rows.append((ts, str(uid), m.get("from") or str(uid), m))
+        rows.append((ts, str(uid), display_name(m.get("from"), uid), m))
     rows.sort(key=lambda r: r[0])
 
     if not rows:

@@ -13,6 +13,8 @@ Pure functions; no UI."""
 
 from __future__ import annotations
 
+from .utils import display_name
+
 import re
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
@@ -131,7 +133,7 @@ def analyze(messages: list[dict]) -> MatStats:
         if not uid:
             continue
         uid = str(uid).replace(" ", "")
-        names.setdefault(uid, m.get("from") or uid)
+        names.setdefault(uid, display_name(m.get("from"), uid))
         text = _msg_text(m)
         if not text:
             continue

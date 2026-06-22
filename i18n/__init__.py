@@ -352,6 +352,9 @@ EN: dict[str, str] = {
     # highlight cards (top_highlights) — labels also reused by other tabs
     "Пиковый час": "Peak Hour",
     "за всё время": "all-time",
+    # participant whose name Telegram didn't export (deleted account) — shown as
+    # "Аноним · <id>" so the raw `userNNNN` from_id never leaks into the UI
+    "Аноним": "Anonymous",
     "Самый громкий день": "Loudest Day",
     "Любимая эмоджи": "Favorite Emoji",
     # "Самый длинный стрик" / "Самое долгое молчание" already defined above (per-user streaks block)

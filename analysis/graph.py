@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from .utils import display_name
+
 from collections import Counter
 from dataclasses import dataclass
 
@@ -86,7 +88,7 @@ def interaction_summary(messages: list[dict]) -> list[dict]:
         from_id = m.get("from_id")
         if not from_id:
             continue
-        name_index.setdefault(from_id, m.get("from") or from_id)
+        name_index.setdefault(from_id, display_name(m.get("from"), from_id))
         sent[from_id] += 1
         rid = m.get("reply_to_message_id")
         if rid is not None:

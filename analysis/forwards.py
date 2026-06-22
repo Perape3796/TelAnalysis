@@ -8,6 +8,8 @@ Pure functions; no UI."""
 
 from __future__ import annotations
 
+from .utils import display_name
+
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
 
@@ -51,7 +53,7 @@ def analyze(messages: list[dict], top_sources: int = 5) -> ForwardsStats:
         if not uid:
             continue
         uid = str(uid).replace(" ", "")
-        names.setdefault(uid, m.get("from") or uid)
+        names.setdefault(uid, display_name(m.get("from"), uid))
         counts[uid] += 1
         src = m.get("forwarded_from")
         if isinstance(src, str) and src.strip():

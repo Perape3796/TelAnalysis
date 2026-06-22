@@ -10,6 +10,9 @@ import { personPalette } from "@/lib/chart-theme"
 import { Section } from "@/components/section"
 import { Collapsible } from "@/components/collapsible"
 
+// Cap the per-user tone chart — beyond this it's rainbow spaghetti in big groups.
+const SENTI_TOP_USERS = 8
+
 /** Sub-section header inside the sentiment block (smaller than a tab Section). */
 function SubSection({ title, children }: { title: string; children: React.ReactNode }) {
   return (
@@ -71,7 +74,13 @@ export function SentimentBlock({ path, sel }: { path: string; sel: Sel }) {
     arr.push([p.period!, +p.avg.toFixed(3)])
     byUser.set(p.user_id!, arr)
   }
-  const userSeriesRaw = [...byUser.entries()].map(([uid, data]) => ({ name: d.user_names?.[uid] ?? uid, data }))
+  // One line per user is fine for a couple of people but a 200-person group turns
+  // into unreadable rainbow spaghetti — keep the most active (most data points)
+  // few. The chat-wide line above still reflects everyone.
+  const userSeriesRaw = [...byUser.entries()]
+    .map(([uid, data]) => ({ name: d.user_names?.[uid] ?? uid, data }))
+    .sort((a, b) => b.data.length - a.data.length)
+    .slice(0, SENTI_TOP_USERS)
   // each participant keeps their app-wide hue so a line matches them elsewhere
   const userPal = personPalette(userSeriesRaw.map((s) => s.name))
   const userSeries = userSeriesRaw.map((s) => ({ ...s, color: userPal[s.name] }))

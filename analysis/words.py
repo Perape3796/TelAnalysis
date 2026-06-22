@@ -3,6 +3,8 @@ Pure functions: take messages, return structured results."""
 
 from __future__ import annotations
 
+from .utils import DEDUP_MIN_CHARS, display_name, is_bot_name
+
 import math as _math
 import re
 from collections import defaultdict
@@ -232,6 +234,7 @@ def analyze(messages: list[dict], most_com: int = 30) -> WordsResult:
     # batched inference. Convert to tuples at the end.
     user_msgs: dict[str, list[list]] = defaultdict(list)
     user_names: dict[str, str] = {}
+    seen_long: dict[str, set[str]] = defaultdict(set)
     emails: list[str] = []
     phones: list[str] = []
 
@@ -249,6 +252,8 @@ def analyze(messages: list[dict], most_com: int = 30) -> WordsResult:
             if uid is None:
                 continue
             uid = str(uid).replace(" ", "")
+            if uid not in user_names:
+                user_names[uid] = display_name(m.get("actor"), uid)
             action = m.get("action")
             if action:
                 tex = m.get("text") or ""
@@ -262,11 +267,20 @@ def analyze(messages: list[dict], most_com: int = 30) -> WordsResult:
                 continue
 
         uid = str(uid).replace(" ", "")
+        if is_bot_name(m.get("from")):
+            continue  # keep bot reposts (welcome/rules) out of vocabulary stats
         if uid not in user_names:
-            user_names[uid] = m.get("from") or uid
+            user_names[uid] = display_name(m.get("from"), uid)
+
+        frags = _extract_text(m)
+        joined = " ".join(sorted(f for f in frags if f))
+        if len(joined) >= DEDUP_MIN_CHARS:
+            if joined in seen_long[uid]:
+                continue  # same long block already counted (rules/spam repost)
+            seen_long[uid].add(joined)
 
         m_date = m.get("date") if isinstance(m.get("date"), str) else None
-        for fragment in _extract_text(m):
+        for fragment in frags:
             if not fragment:
                 continue
             slot = len(user_msgs[uid])
@@ -323,7 +337,7 @@ def analyze(messages: list[dict], most_com: int = 30) -> WordsResult:
         all_tokens.extend(tokens)
         users[uid] = UserStats(
             user_id=uid,
-            name=user_names.get(uid, uid),
+            name=user_names.get(uid) or display_name(None, uid),
             messages=msgs_t,
             avg_sentiment=avg,
             top_words=list(top),

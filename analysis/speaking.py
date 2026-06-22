@@ -6,6 +6,8 @@ Pure functions. Counts characters/words, message extremes, and tone signals
 
 from __future__ import annotations
 
+from .utils import display_name
+
 from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -153,7 +155,7 @@ def analyze(messages: list[dict]) -> dict[str, SpeakingStyle]:
         if not uid:
             continue
         uid = str(uid).replace(" ", "")
-        user_names.setdefault(uid, m.get("from") or uid)
+        user_names.setdefault(uid, display_name(m.get("from"), uid))
         text = _msg_text(m)
         if not text:
             continue

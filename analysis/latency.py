@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from .utils import display_name
+
 from collections import defaultdict
 from dataclasses import dataclass
 
@@ -113,7 +115,7 @@ def compute(messages: list[dict], cap_hours: int = 24) -> LatencyStats:
         if not responder:
             continue
         if responder not in user_names:
-            user_names[responder] = m.get("from") or responder
+            user_names[responder] = display_name(m.get("from"), responder)
         overall.append(delta)
         per_user[responder].append(delta)
         if has_q_index.get(rid):

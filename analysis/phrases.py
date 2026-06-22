@@ -15,7 +15,7 @@ from nltk import word_tokenize
 from nltk.corpus import stopwords as nltk_stopwords
 
 from . import stopwords_list
-from .utils import remove_emojis, spec_chars
+from .utils import DEDUP_MIN_CHARS, display_name, is_bot_name, remove_emojis, spec_chars
 
 _RUS_SW: set[str] | None = None
 _ENG_SW: set[str] | None = None
@@ -118,17 +118,25 @@ def top_phrases(
     `filter_uid` restricts to one user's messages."""
     _ensure_stopwords()
     counter: Counter = Counter()
+    seen_long: set[str] = set()
     for m in messages:
         if not isinstance(m, dict):
             continue
         if filter_uid is not None and m.get("from_id") != filter_uid:
             continue
+        if filter_uid is None and is_bot_name(m.get("from")):
+            continue  # skip bot reposts from the chat-wide phrase pool
         text = _msg_text(m)
         if not text:
             continue
         tokens = _tokenize_clean(text)
         if len(tokens) < n:
             continue
+        key = " ".join(tokens)
+        if len(key) >= DEDUP_MIN_CHARS:
+            if key in seen_long:
+                continue  # same long block already counted (rules/spam repost)
+            seen_long.add(key)
         for ng in _ngrams_no_stop_at_edges(tokens, n):
             counter[ng] += 1
     return [(p, c) for p, c in counter.most_common(top * 2) if c >= min_count][:top]
@@ -141,19 +149,27 @@ def per_user_phrases(
     _ensure_stopwords()
     by_user: dict[str, Counter] = defaultdict(Counter)
     user_names: dict[str, str] = {}
+    seen_long: dict[str, set[str]] = defaultdict(set)
     for m in messages:
         if not isinstance(m, dict):
             continue
         uid = m.get("from_id")
         if not uid:
             continue
-        user_names.setdefault(uid, m.get("from") or uid)
+        if is_bot_name(m.get("from")):
+            continue  # bots aren't conversational participants
+        user_names.setdefault(uid, display_name(m.get("from"), uid))
         text = _msg_text(m)
         if not text:
             continue
         tokens = _tokenize_clean(text)
         if len(tokens) < n:
             continue
+        key = " ".join(tokens)
+        if len(key) >= DEDUP_MIN_CHARS:
+            if key in seen_long[uid]:
+                continue  # this user's reposted long block — count once
+            seen_long[uid].add(key)
         for ng in _ngrams_no_stop_at_edges(tokens, n):
             by_user[uid][ng] += 1
     return {

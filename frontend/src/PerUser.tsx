@@ -1,17 +1,29 @@
 import { useState } from "react"
 import { useQuery } from "@tanstack/react-query"
 import { useTranslation } from "react-i18next"
+import { ChevronsUpDown } from "lucide-react"
 
-import { api, stickerFileUrl, type Sel, type StickerRef } from "@/lib/api"
+import { api, stickerFileUrl, type Sel, type SpeakingStyle, type StickerRef, type UserMat } from "@/lib/api"
 import { dayWord, fmtInt, humanizeDuration, personaForLength, personaForTimeOfDay, timeBucketLabel } from "@/lib/i18n"
-import { personColor, personPalette } from "@/lib/chart-theme"
+import { personColor } from "@/lib/chart-theme"
 import { Card } from "@/components/ui/card"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Input } from "@/components/ui/input"
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Bars, BarsH, Box, HourWeekday, Lines, Radar } from "@/components/charts"
 import { RankTable } from "@/components/rank-table"
+import { Collapsible } from "@/components/collapsible"
 import { TabError, TabLoading } from "@/components/loading"
 import { ExtremeList } from "@/Sentiment"
 
+// Up to this many participants, overlay them all on the tone radar; beyond it,
+// show just the selected user vs. the chat average.
+const RADAR_MAX_OVERLAY = 6
+// Cap the wakeup box plot — beyond this the boxes turn to mush in big groups.
+const WAKE_TOP = 8
+// Swearing leaderboard: hide tiny-sample rows from the headline view (per-100 is
+// noise below this) and cap how many rows show before "Show all".
+const MAT_MIN_MSGS = 30
+const MAT_TOP = 20
 const TIME_ORDER = ["night", "morning", "day", "evening"]
 const LEN_ORDER = ["<30", "30-100", "100-300", "300+"]
 const LAT_BUCKETS: [string, number][] = [
@@ -35,6 +47,36 @@ function Stat({ label, value, sub }: { label: string; value: string; sub?: strin
 
 function H3({ children }: { children: React.ReactNode }) {
   return <h3 className="text-lg font-semibold tracking-tight">{children}</h3>
+}
+
+/** Swearing leaderboard table. `flush` drops the Card for the "Show all" disclosure. */
+function MatTable({ rows, flush = false }: { rows: UserMat[]; flush?: boolean }) {
+  const { t } = useTranslation()
+  const table = (
+    <table className="w-full text-sm">
+      <thead>
+        <tr className="border-b border-border text-left text-xs uppercase tracking-wide text-muted-foreground">
+          <th className="px-4 py-2 font-semibold">{t("user")}</th>
+          <th className="px-4 py-2 text-right font-semibold">{t("matMsgs")}</th>
+          <th className="px-4 py-2 text-right font-semibold">{t("matWith")}</th>
+          <th className="px-4 py-2 text-right font-semibold">{t("matHits")}</th>
+          <th className="px-4 py-2 text-right font-semibold">{t("matPer100")}</th>
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map((m) => (
+          <tr key={m.user_id} className="border-b border-border/60 last:border-0">
+            <td className="px-4 py-2 font-medium">{m.name}</td>
+            <td className="px-4 py-2 text-right tabular-nums text-muted-foreground">{fmtInt(m.total_messages)}</td>
+            <td className="px-4 py-2 text-right tabular-nums text-muted-foreground">{fmtInt(m.mat_messages)}</td>
+            <td className="px-4 py-2 text-right tabular-nums text-muted-foreground">{fmtInt(m.mat_hits)}</td>
+            <td className="px-4 py-2 text-right tabular-nums">{(m.total_messages ? (m.mat_hits * 100) / m.total_messages : 0).toFixed(1)}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  )
+  return flush ? table : <Card className="overflow-hidden border-border bg-card">{table}</Card>
 }
 
 /** Qualitative portrait of the selected participant — an initial avatar in their
@@ -144,6 +186,48 @@ function StickerGrid({
   )
 }
 
+/** Searchable participant picker. A plain <select> with 200+ options (half of
+ *  them anonymous) is unnavigable, so this is a Popover with a filter input over
+ *  a scrollable list, sorted by message count (most active first). */
+function UserCombobox({ users, value, onChange }: { users: SpeakingStyle[]; value: string; onChange: (id: string) => void }) {
+  const { t } = useTranslation()
+  const [open, setOpen] = useState(false)
+  const [q, setQ] = useState("")
+  const current = users.find((u) => u.user_id === value)
+  const ql = q.trim().toLowerCase()
+  const filtered = ql ? users.filter((u) => u.name.toLowerCase().includes(ql)) : users
+  return (
+    <Popover open={open} onOpenChange={(o) => { setOpen(o); if (!o) setQ("") }}>
+      <PopoverTrigger className="flex h-9 w-[280px] items-center justify-between gap-2 rounded-md border border-input bg-transparent px-3 text-sm shadow-xs transition-colors hover:bg-muted/40 focus-visible:border-ring focus-visible:ring-ring/50 focus-visible:ring-[3px] outline-none">
+        <span className="truncate">{current ? `${current.name} · ${fmtInt(current.msg_count)}` : t("pickUser")}</span>
+        <ChevronsUpDown className="size-4 shrink-0 text-muted-foreground" />
+      </PopoverTrigger>
+      <PopoverContent align="start" className="w-[280px] gap-0 p-0">
+        <div className="border-b border-border p-2">
+          <Input autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder={t("searchUser")} className="h-8" />
+        </div>
+        <div className="max-h-72 overflow-auto p-1">
+          {filtered.length === 0 ? (
+            <div className="px-2 py-3 text-sm text-muted-foreground">{t("noData")}</div>
+          ) : (
+            filtered.map((u) => (
+              <button
+                key={u.user_id}
+                type="button"
+                onClick={() => { onChange(u.user_id); setOpen(false); setQ("") }}
+                className={`flex w-full items-center justify-between gap-2 rounded-sm px-2 py-1.5 text-left text-sm transition-colors hover:bg-muted ${u.user_id === value ? "bg-muted/60 font-medium" : ""}`}
+              >
+                <span className="truncate">{u.name}</span>
+                <span className="shrink-0 tabular-nums text-xs text-muted-foreground">{fmtInt(u.msg_count)}</span>
+              </button>
+            ))
+          )}
+        </div>
+      </PopoverContent>
+    </Popover>
+  )
+}
+
 const pct = (x: number) => `${Math.round(x * 100)}%`
 const median = (xs: number[]) => {
   if (!xs.length) return 0
@@ -199,32 +283,52 @@ export function PerUser({ path, sel }: { path: string; sel: Sel }) {
   const userStickerData = stickersQ.data?.[id]
   const userLat = latencyQ.data?.per_user_seconds?.[id] ?? []
 
-  // tone radar across all users — each keeps their app-wide hue (distinct per chat)
-  const orderedPal = personPalette(ordered.map((u) => u.name))
-  const radarSeries = ordered.map((u) => ({
-    name: u.name,
-    highlight: u.user_id === id,
-    color: orderedPal[u.name],
-    values: [
-      Math.round(u.question_ratio * 100),
-      Math.round(u.exclamation_ratio * 100),
-      Math.round(u.caps_ratio * 100),
-      Math.round(u.msg_count ? (u.reply_count / u.msg_count) * 100 : 0),
-    ],
-  }))
+  // Tone radar. Overlaying every participant is an unreadable rainbow in a big
+  // group (200+ lines + a paginated legend), so we plot just the selected user
+  // against the chat average — "you vs. the room". The axis scale still spans
+  // every participant's range so the selected polygon stays honestly positioned.
+  const radarVals = (u: typeof s) => [
+    Math.round(u.question_ratio * 100),
+    Math.round(u.exclamation_ratio * 100),
+    Math.round(u.caps_ratio * 100),
+    Math.round(u.msg_count ? (u.reply_count / u.msg_count) * 100 : 0),
+  ]
   // Per-axis max — each indicator scaled to its own range across users. A single
   // shared max lets the wide axes (reply/question ratios) dominate and collapses
   // the small ones (caps, exclamations) to the centre, so the polygon degenerates
   // into a sliver. Rounded up to a "nice" step, min 1 to avoid a zero axis.
-  const axisMax = radarSeries[0].values.map((_, i) => {
-    const m = Math.max(...radarSeries.map((r) => r.values[i]), 0)
+  const axisMax = [0, 1, 2, 3].map((i) => {
+    const m = Math.max(...ordered.map((u) => radarVals(u)[i]), 0)
     return m > 0 ? Math.ceil(m / 5) * 5 : 1
   })
+  const radarAvg = [0, 1, 2, 3].map((i) => {
+    const vals = ordered.map((u) => radarVals(u)[i])
+    return Math.round(vals.reduce((a, b) => a + b, 0) / (vals.length || 1))
+  })
+  // A handful of people read fine overlaid (direct "you vs them" comparison), so
+  // keep that for small chats and only collapse to "you vs average" once the
+  // overlay would turn into a rainbow.
+  const radarSeries =
+    ordered.length <= RADAR_MAX_OVERLAY
+      ? ordered.map((u) => ({ name: u.name, highlight: u.user_id === id, color: personColor(u.name), values: radarVals(u) }))
+      : [
+          { name: s.name, highlight: true, color: personColor(s.name), values: radarVals(s) },
+          { name: t("chatAverage"), color: "rgba(148,163,184,0.9)", values: radarAvg },
+        ]
   const indicators = [t("axisQuestion"), t("axisExcl"), t("axisCaps"), t("axisReply")].map((name, i) => ({ name, max: axisMax[i] }))
 
-  // wakeup
+  // wakeup — the box plot compares distributions, but 200 boxes is mush, so cap
+  // to the most active participants (ordered is msg_count desc) and make sure the
+  // selected user is always among them.
   const wakeMin = median(s.first_msg_minutes ?? [])
-  const wakeGroups = ordered.filter((u) => (u.first_msg_minutes?.length ?? 0) > 3).map((u) => ({ name: u.name, values: u.first_msg_minutes }))
+  const wakeQualifying = ordered.filter((u) => (u.first_msg_minutes?.length ?? 0) > 3)
+  const wakeGroups = (() => {
+    const top = wakeQualifying.slice(0, WAKE_TOP)
+    if ((s.first_msg_minutes?.length ?? 0) > 3 && !top.some((u) => u.user_id === id) && top.length) {
+      top[top.length - 1] = s // swap the selected user in so they can compare
+    }
+    return top.map((u) => ({ name: u.name, values: u.first_msg_minutes }))
+  })()
 
   // latency histogram (cumulative bucket match)
   const latData: [string, number][] = (() => {
@@ -248,6 +352,13 @@ export function PerUser({ path, sel }: { path: string; sel: Sel }) {
   const initRow = initQ.data?.rows.find((r) => String(r.user_id) === String(id))
   const fwd = fwdQ.data?.per_user?.[id]
   const matRows = matQ.data ? Object.values(matQ.data.per_user).sort((a, b) => b.mat_hits / Math.max(1, b.total_messages) - a.mat_hits / Math.max(1, a.total_messages)) : []
+  // Only people who actually swore, and for the headline view only those with
+  // enough messages for a stable per-100 rate (one "1 msg / 1 hit = 100%" row
+  // would otherwise top the chart). The full list stays behind "Show all".
+  const matWithHits = matRows.filter((m) => m.mat_hits > 0)
+  const matSignificant = matWithHits.filter((m) => m.total_messages >= MAT_MIN_MSGS)
+  const matShown = matSignificant.length >= 1 ? matSignificant : matWithHits
+  const matTop = matShown.slice(0, MAT_TOP)
   const dist = distQ.data
 
   // persona portrait: hue + qualitative trait chips for the selected participant
@@ -264,22 +375,7 @@ export function PerUser({ path, sel }: { path: string; sel: Sel }) {
     <div className="space-y-8 pt-2">
       <div className="flex items-center gap-3">
         <span className="text-sm text-muted-foreground">{t("pickUser")}</span>
-        <Select value={id} onValueChange={(v) => v && setUid(v)}>
-          <SelectTrigger className="w-[280px]">
-            {/* base-ui Select.Value shows the raw value by default — map to name */}
-            <SelectValue>
-              {(v: string) => {
-                const u = ordered.find((x) => x.user_id === v)
-                return u ? `${u.name} · ${fmtInt(u.msg_count)}` : v
-              }}
-            </SelectValue>
-          </SelectTrigger>
-          <SelectContent>
-            {ordered.map((u) => (
-              <SelectItem key={u.user_id} value={u.user_id}>{u.name} · {fmtInt(u.msg_count)}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <UserCombobox users={ordered} value={id} onChange={(v) => setUid(v)} />
       </div>
 
       <PersonaLead name={s.name} color={personaColor} shareLabel={personaShare} chips={personaChips} />
@@ -315,9 +411,13 @@ export function PerUser({ path, sel }: { path: string; sel: Sel }) {
               <Card className="border-border bg-card p-3 lg:col-span-2"><Box groups={wakeGroups} asTime /></Card>
             )}
           </div>
-          {(() => {
+          {/* The box plot already compares everyone shown; only fall back to a
+              text list when it can't render (too few qualifying users), and cap
+              it so a 200-person chat never dumps a wall of names. */}
+          {wakeGroups.length < 2 && (() => {
             const others = ordered
               .filter((u) => u.user_id !== id && (u.first_msg_minutes?.length ?? 0) > 0)
+              .slice(0, 12)
               .map((u) => ({ name: u.name, hhmm: hhmm(median(u.first_msg_minutes)) }))
             if (!others.length) return null
             return (
@@ -548,34 +648,18 @@ export function PerUser({ path, sel }: { path: string; sel: Sel }) {
         </section>
       )}
 
-      {matRows.some((m) => m.mat_hits > 0) && (
+      {matWithHits.length > 0 && (
         <section className="space-y-3">
           <H3>{t("matTitle")}</H3>
           <p className="-mt-1 text-sm text-muted-foreground">{t("matHelp")}</p>
-          <Card className="overflow-hidden border-border bg-card">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-border text-left text-xs uppercase tracking-wide text-muted-foreground">
-                  <th className="px-4 py-2 font-semibold">{t("user")}</th>
-                  <th className="px-4 py-2 text-right font-semibold">{t("matMsgs")}</th>
-                  <th className="px-4 py-2 text-right font-semibold">{t("matWith")}</th>
-                  <th className="px-4 py-2 text-right font-semibold">{t("matHits")}</th>
-                  <th className="px-4 py-2 text-right font-semibold">{t("matPer100")}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {matRows.map((m) => (
-                  <tr key={m.user_id} className="border-b border-border/60 last:border-0">
-                    <td className="px-4 py-2 font-medium">{m.name}</td>
-                    <td className="px-4 py-2 text-right tabular-nums text-muted-foreground">{fmtInt(m.total_messages)}</td>
-                    <td className="px-4 py-2 text-right tabular-nums text-muted-foreground">{fmtInt(m.mat_messages)}</td>
-                    <td className="px-4 py-2 text-right tabular-nums text-muted-foreground">{fmtInt(m.mat_hits)}</td>
-                    <td className="px-4 py-2 text-right tabular-nums">{(m.total_messages ? (m.mat_hits * 100) / m.total_messages : 0).toFixed(1)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </Card>
+          <MatTable rows={matTop} />
+          {matWithHits.length > matTop.length && (
+            <Collapsible label={t("showAll", { n: matWithHits.length })}>
+              <Card className="max-h-96 overflow-auto border-border bg-card">
+                <MatTable rows={matWithHits} flush />
+              </Card>
+            </Collapsible>
+          )}
         </section>
       )}
     </div>

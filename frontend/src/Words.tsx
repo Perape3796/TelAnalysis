@@ -15,6 +15,11 @@ import { Section } from "@/components/section"
 import { Collapsible } from "@/components/collapsible"
 import { SentimentBlock } from "@/Sentiment"
 
+// MTLD stabilizes only with a few hundred tokens; below this it reads 0.0 and
+// just pads the table with deleted/one-line accounts.
+const VOCAB_MIN_TOKENS = 500
+const VOCAB_TOP = 20
+
 function Stat({ label, value }: { label: string; value: string }) {
   return (
     <Card className="gap-1 border-border bg-card px-4 py-3">
@@ -37,6 +42,13 @@ export function Words({ path, sel }: { path: string; sel: Sel }) {
   if (words.isLoading) return <TabLoading />
   if (words.isError) return <TabError onRetry={words.refetch} />
   if (!w) return null
+
+  // Vocabulary richness (MTLD) is noise below a token floor and explodes to
+  // hundreds of rows in big groups — sort by verbosity, keep the significant
+  // ones, but fall back to everyone for small chats where nobody clears the bar.
+  const vocabSorted = [...w.users].sort((a, b) => b.total_tokens - a.total_tokens)
+  const vocabSignificant = vocabSorted.filter((u) => u.total_tokens >= VOCAB_MIN_TOKENS)
+  const vocabUsers = vocabSignificant.length >= 2 ? vocabSignificant : vocabSorted
 
   return (
     <div className="space-y-8 pt-2">
@@ -89,30 +101,19 @@ export function Words({ path, sel }: { path: string; sel: Sel }) {
         )}
       </Section>
 
-      {w.users.length > 0 && (
+      {vocabUsers.length > 0 && (
         <Section title={t("vocabulary")} hint={t("vocabHint")} icon={Library}>
-          <Card className="overflow-hidden border-border bg-card">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-border text-left text-xs uppercase tracking-wide text-muted-foreground">
-                  <th className="px-4 py-2 font-semibold">{t("user")}</th>
-                  <th className="px-4 py-2 text-right font-semibold">{t("totalTokens")}</th>
-                  <th className="px-4 py-2 text-right font-semibold">{t("uniqueTokens")}</th>
-                  <th className="px-4 py-2 text-right font-semibold">{t("mtld")}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {w.users.map((u) => (
-                  <tr key={u.user_id} className="border-b border-border/60 last:border-0">
-                    <td className="px-4 py-2 font-medium">{u.name}</td>
-                    <td className="px-4 py-2 text-right tabular-nums text-muted-foreground">{fmtInt(u.total_tokens)}</td>
-                    <td className="px-4 py-2 text-right tabular-nums text-muted-foreground">{fmtInt(u.unique_tokens)}</td>
-                    <td className="px-4 py-2 text-right tabular-nums">{u.mtld.toFixed(1)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </Card>
+          {/* MTLD needs enough tokens to be meaningful, so a 509-person chat dumps
+              hundreds of rows with MTLD 0.0 — keep only participants past a token
+              floor, show the most verbose first, the rest behind a disclosure. */}
+          <VocabTable rows={vocabUsers.slice(0, VOCAB_TOP)} />
+          {vocabUsers.length > VOCAB_TOP && (
+            <Collapsible label={t("showAll", { n: vocabUsers.length })}>
+              <Card className="max-h-96 overflow-auto border-border bg-card">
+                <VocabTable rows={vocabUsers} flush />
+              </Card>
+            </Collapsible>
+          )}
         </Section>
       )}
 
@@ -170,6 +171,35 @@ function ContactList({ label, items }: { label: string; items: string[] }) {
       </Card>
     </Collapsible>
   )
+}
+
+/** Per-user vocabulary-richness table (tokens / unique / MTLD). `flush` drops the
+ *  outer Card so it can sit inside the scrollable "Show all" disclosure. */
+function VocabTable({ rows, flush = false }: { rows: { user_id: string; name: string; total_tokens: number; unique_tokens: number; mtld: number }[]; flush?: boolean }) {
+  const { t } = useTranslation()
+  const table = (
+    <table className="w-full text-sm">
+      <thead>
+        <tr className="border-b border-border text-left text-xs uppercase tracking-wide text-muted-foreground">
+          <th className="px-4 py-2 font-semibold">{t("user")}</th>
+          <th className="px-4 py-2 text-right font-semibold">{t("totalTokens")}</th>
+          <th className="px-4 py-2 text-right font-semibold">{t("uniqueTokens")}</th>
+          <th className="px-4 py-2 text-right font-semibold">{t("mtld")}</th>
+        </tr>
+      </thead>
+      <tbody>
+        {rows.map((u) => (
+          <tr key={u.user_id} className="border-b border-border/60 last:border-0">
+            <td className="px-4 py-2 font-medium">{u.name}</td>
+            <td className="px-4 py-2 text-right tabular-nums text-muted-foreground">{fmtInt(u.total_tokens)}</td>
+            <td className="px-4 py-2 text-right tabular-nums text-muted-foreground">{fmtInt(u.unique_tokens)}</td>
+            <td className="px-4 py-2 text-right tabular-nums">{u.mtld.toFixed(1)}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  )
+  return flush ? table : <Card className="overflow-hidden border-border bg-card">{table}</Card>
 }
 
 /** Simple [string, number] table — used by the "Show all" disclosures. */

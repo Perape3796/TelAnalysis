@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from .utils import display_name
+
 from collections import Counter
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
@@ -124,7 +126,7 @@ def conversation_initiators(
         ts = _parse(m.get("date"))
         if ts is None:
             continue
-        rows.append((ts, str(uid), m.get("from") or str(uid)))
+        rows.append((ts, str(uid), display_name(m.get("from"), uid)))
     rows.sort(key=lambda r: r[0])
 
     if len(rows) < 2:

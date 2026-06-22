@@ -15,6 +15,8 @@ Pure functions; no UI."""
 
 from __future__ import annotations
 
+from .utils import display_name
+
 from collections import Counter
 from dataclasses import dataclass, field
 
@@ -61,7 +63,7 @@ def analyze(messages: list[dict], top_n: int = 12) -> StickerStats:
         if not uid:
             continue
         uid = str(uid).replace(" ", "")
-        names.setdefault(uid, m.get("from") or uid)
+        names.setdefault(uid, display_name(m.get("from"), uid))
         emoji = m.get("sticker_emoji") or "?"
         per_user_emoji.setdefault(uid, Counter())[emoji] += 1
         chat_total += 1

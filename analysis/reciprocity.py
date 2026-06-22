@@ -8,6 +8,8 @@ from "I answer you"."""
 
 from __future__ import annotations
 
+from .utils import display_name
+
 from collections import defaultdict
 from dataclasses import dataclass
 from datetime import datetime
@@ -55,7 +57,7 @@ def compute(messages: list[dict], cap_hours: int = 24) -> ReciprocityResult:
         ts = _parse(m.get("date"))
         if ts is None:
             continue
-        rows.append((ts, str(uid), m.get("from") or str(uid)))
+        rows.append((ts, str(uid), display_name(m.get("from"), uid)))
     rows.sort(key=lambda r: r[0])
 
     distinct = sorted({uid for _, uid, _ in rows})

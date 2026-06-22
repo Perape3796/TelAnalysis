@@ -6,6 +6,8 @@ return primitive structures the API serialises to JSON. No UI.
 
 from __future__ import annotations
 
+from .utils import display_name
+
 from collections import Counter
 from dataclasses import dataclass
 from datetime import datetime
@@ -108,7 +110,7 @@ def hour_distribution_per_user(
         if d is None:
             continue
         if uid not in out:
-            name = m.get("from") or uid
+            name = display_name(m.get("from"), uid)
             out[uid] = (name, [0] * 24)
         out[uid][1][d.hour] += 1
     return out

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from .utils import display_name
+
 from collections import Counter, defaultdict
 from dataclasses import dataclass
 
@@ -66,7 +68,7 @@ def analyze(messages: list[dict], top_per_user: int = 20) -> EmojiStats:
             continue
         user = str(user)
         if user not in user_names:
-            user_names[user] = m.get("from") or user
+            user_names[user] = display_name(m.get("from"), user)
 
         found_in_msg = False
         for fragment in _walk_text(m):
