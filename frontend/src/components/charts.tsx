@@ -1,3 +1,4 @@
+import { useEffect, useRef } from "react"
 import ReactECharts from "echarts-for-react"
 
 import i18n, { fmtDateTick, fmtInt, mediaKindLabel, monthShort, weekdayShort } from "@/lib/i18n"
@@ -348,39 +349,64 @@ export function DivergingBars({
   )
 }
 
-/** Reply graph — force-directed, draggable & zoomable. Reuses ECharts (no extra dep).
- *  Parallel edges are aggregated; the heaviest nodes are kept for readability. */
+/** Reply graph - force-directed, draggable & zoomable, with directed arrows.
+ *  Click a node to focus its reply neighbourhood; the side panel lists who it
+ *  replies to and who replies to it. Each direction of a pair is kept as its own
+ *  weighted arrow; pairs below `minWeight` replies and participants beyond the
+ *  top `topN` (by messages) are dropped to keep a big chat legible - except the
+ *  selected node and its partners, which are always shown. */
 export function Network({
   nodes,
   edges,
   communities,
-  maxNodes = 60,
+  selectedId = null,
+  onSelect,
+  topN = 40,
+  minWeight = 1,
 }: {
   nodes: [string, string, number][]
   edges: [string, string, string][]
   communities?: Record<string, number>
-  maxNodes?: number
+  selectedId?: string | null
+  onSelect?: (id: string | null) => void
+  topN?: number
+  minWeight?: number
 }) {
-  const kept = [...nodes].sort((a, b) => b[2] - a[2]).slice(0, maxNodes)
-  const keep = new Set(kept.map((n) => n[0]))
-  const maxW = Math.max(1, ...kept.map((n) => n[2]))
+  const chartRef = useRef<ReactECharts>(null)
+  const nameOf = new Map(nodes.map((n) => [n[0], n[1] || "—"]))
 
-  // aggregate parallel edges into one weighted link per unordered pair (skip self-loops)
-  const pair = new Map<string, number>()
+  // directed pair counts (skip self-loops = non-reply messages)
+  const dir = new Map<string, number>()
   for (const [s, t] of edges) {
-    if (s === t || !keep.has(s) || !keep.has(t)) continue
-    const key = s < t ? `${s} ${t}` : `${t} ${s}`
-    pair.set(key, (pair.get(key) ?? 0) + 1)
+    if (s === t) continue
+    const key = `${s}\t${t}`
+    dir.set(key, (dir.get(key) ?? 0) + 1)
   }
-  const maxE = Math.max(1, ...pair.values())
+
+  // base set = top participants by message count; always keep the selected node
+  // and its (>=minWeight) reply partners so picking someone outside the top-N
+  // still reveals their neighbourhood.
+  const byWeight = [...nodes].sort((a, b) => b[2] - a[2])
+  const keep = new Set(byWeight.slice(0, topN).map((n) => n[0]))
+  if (selectedId) {
+    keep.add(selectedId)
+    for (const [key, w] of dir) {
+      if (w < minWeight) continue
+      const [s, t] = key.split("\t")
+      if (s === selectedId || t === selectedId) { keep.add(s); keep.add(t) }
+    }
+  }
+
+  const kept = byWeight.filter((n) => keep.has(n[0]))
+  const maxW = Math.max(1, ...kept.map((n) => n[2]))
 
   // Colour by Louvain community when the backend supplies one (clusters read
   // as groups); otherwise fall back to a per-node hue.
   const hasComm = !!communities && Object.keys(communities).length > 0
   const data = kept.map((n, i) => ({
     id: n[0],
-    name: n[1],
-    symbolSize: 14 + 42 * Math.sqrt(n[2] / maxW),
+    name: n[1] || "—",
+    symbolSize: 12 + 40 * Math.sqrt(n[2] / maxW),
     itemStyle: {
       color: PALETTE[(hasComm ? (communities![n[0]] ?? 0) : i) % PALETTE.length],
       borderColor: "rgba(255,255,255,0.14)",
@@ -388,22 +414,61 @@ export function Network({
       shadowColor: "rgba(0,0,0,0.4)",
       shadowBlur: 8,
     },
-    label: { show: kept.length <= 30 },
+    label: { show: kept.length <= 28 },
   }))
-  const links = [...pair.entries()].map(([key, w]) => {
-    const [source, target] = key.split(" ")
-    return { source, target, lineStyle: { width: 1 + 5 * (w / maxE), opacity: 0.45 } }
+
+  const visible = [...dir.entries()].filter(([key, w]) => {
+    const [s, t] = key.split("\t")
+    return w >= minWeight && keep.has(s) && keep.has(t)
+  })
+  const maxE = Math.max(1, ...visible.map(([, w]) => w))
+  const links = visible.map(([key, w]) => {
+    const [source, target] = key.split("\t")
+    // uniform curveness keeps A->B and B->A as two separate arcs (each bows to
+    // the right of its own direction of travel), so reciprocal replies stay distinct.
+    // Faint by default — a hint of structure, not a hairball; width & opacity both
+    // scale with weight so only the strongest threads read until a node is focused.
+    return { source, target, value: w, lineStyle: { width: 1 + 4 * (w / maxE), opacity: 0.04 + 0.12 * (w / maxE), curveness: 0.18 } }
   })
 
   // Small graphs (e.g. a 7-person group) cluster in the middle of a big canvas;
   // push them apart and shrink the height so they fill the space instead.
   const small = kept.length <= 12
+  const selectedIndex = selectedId ? data.findIndex((n) => n.id === selectedId) : -1
+
+  // Focus the selected node's neighbourhood without recomputing the option (that
+  // would re-run the force layout and reshuffle on every click). `focus:
+  // 'adjacency'` dims everything else and surfaces the cluster's labels.
+  useEffect(() => {
+    const inst = chartRef.current?.getEchartsInstance()
+    if (!inst) return
+    inst.dispatchAction({ type: "downplay", seriesIndex: 0 })
+    if (selectedIndex >= 0) inst.dispatchAction({ type: "highlight", seriesIndex: 0, dataIndex: selectedIndex })
+  }, [selectedIndex, topN, minWeight])
+
+  const onEvents = {
+    click: (p: { dataType?: string; data?: { id?: string } }) => {
+      if (!onSelect) return
+      if (p.dataType === "node" && p.data?.id) onSelect(p.data.id === selectedId ? null : p.data.id)
+    },
+  }
+
   return (
-    <Chart
-      height={small ? 420 : 540}
+    <ReactECharts
+      ref={chartRef}
+      style={{ height: small ? 440 : 560, width: "100%" }}
+      opts={{ renderer: "canvas" }}
+      onEvents={onEvents}
+      notMerge
       option={{
         ...base,
-        tooltip: { ...TOOLTIP },
+        tooltip: {
+          ...TOOLTIP,
+          formatter: (p: { dataType?: string; data?: { name?: string; source?: string; target?: string; value?: number } }) =>
+            p.dataType === "edge"
+              ? `${nameOf.get(p.data?.source ?? "") ?? ""} → ${nameOf.get(p.data?.target ?? "") ?? ""}: ${fmtInt(p.data?.value ?? 0)}`
+              : p.data?.name ?? "",
+        },
         series: [
           {
             type: "graph",
@@ -412,12 +477,18 @@ export function Network({
             draggable: true,
             data,
             links,
+            edgeSymbol: ["none", "arrow"],
+            edgeSymbolSize: 7,
             label: { color: ink.label, position: "right", fontSize: 12, fontWeight: 500 },
-            emphasis: { focus: "adjacency", lineStyle: { width: 6 }, label: { fontSize: 13 } },
-            lineStyle: { color: "rgba(255,255,255,0.22)", curveness: 0.06 },
+            // calm by default: edges stay faint until a node is hovered/selected,
+            // then focus:'adjacency' lights up its web (emphasis) and fades the rest
+            // to almost nothing (blur). Emphasis keeps per-edge width = weight.
+            emphasis: { focus: "adjacency", label: { show: true, fontSize: 13 }, lineStyle: { opacity: 0.92 } },
+            blur: { itemStyle: { opacity: 0.1 }, lineStyle: { opacity: 0.015 }, label: { show: false } },
+            lineStyle: { color: "rgb(140,150,172)", curveness: 0.18 },
             force: {
-              repulsion: small ? 900 : 260,
-              edgeLength: small ? [110, 240] : [50, 150],
+              repulsion: small ? 900 : 320,
+              edgeLength: small ? [110, 240] : [60, 180],
               gravity: small ? 0.04 : 0.08,
             },
           },

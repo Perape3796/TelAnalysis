@@ -390,11 +390,16 @@ def wordcloud(path: str = _P, chat: str | None = _C, from_: str | None = _F, to:
 def graph(path: str = _P, chat: str | None = _C, from_: str | None = _F, to: str | None = _T):
     _, msgs = _resolve(path, chat, from_, to)
     g = graph_mod.build(msgs)
+    communities = graph_mod.detect_communities(g)
+    summary = graph_mod.interaction_summary(msgs)
+    # enriches `summary` rows in place (role/degree/betweenness) + returns portrait
+    portrait = graph_mod.analyse_structure(g, communities, summary)
     return {
         "nodes": g.nodes,
         "edges": g.edges,
-        "communities": graph_mod.detect_communities(g),
-        "summary": graph_mod.interaction_summary(msgs),
+        "communities": communities,
+        "summary": summary,
+        "portrait": portrait,
     }
 
 

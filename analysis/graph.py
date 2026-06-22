@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import i18n
+
 from .utils import display_name
 
 from collections import Counter
@@ -155,3 +157,180 @@ def detect_communities(graph: GraphData) -> dict[str, int]:
     except Exception:
         return {}
     return communities
+
+
+def _pct(vals: list[float], q: float) -> float:
+    """Nearest-rank percentile (q in 0..1); 0 for an empty list."""
+    if not vals:
+        return 0.0
+    s = sorted(vals)
+    i = max(0, min(len(s) - 1, round((len(s) - 1) * q)))
+    return s[i]
+
+
+def analyse_structure(
+    graph: GraphData, communities: dict[str, int], summary: list[dict]
+) -> dict:
+    """Turn the reply structure into something actionable: a per-participant
+    *role* and a chat-level *portrait*.
+
+    Mutates each ``summary`` row in place, adding ``role`` / ``degree`` /
+    ``betweenness``, and returns a ``portrait`` dict of chat-wide findings.
+    Best-effort: roles still work without networkx (just no ``bridge`` role,
+    betweenness 0).
+
+    Roles (one per person, by salience):
+      - ``bridge``    high betweenness + partners span 3+ clusters (the glue)
+      - ``magnet``    replied-to far more than they reply (attention sink)
+      - ``echo``      replies a lot, rarely gets replies back
+      - ``connector`` talks with many people, fairly balanced (a hub)
+      - ``periphery`` one or no reply partners
+      - ``regular``   everyone else
+    """
+    rows_by_id = {str(r["user_id"]): r for r in summary}
+
+    # directed pair counts (skip self-loops = non-reply messages)
+    dir_pairs: dict[tuple[str, str], int] = {}
+    for s, t, _ in graph.edges:
+        if s == t:
+            continue
+        dir_pairs[(s, t)] = dir_pairs.get((s, t), 0) + 1
+
+    out_p: dict[str, set] = {}
+    in_p: dict[str, set] = {}
+    for s, t in dir_pairs:
+        out_p.setdefault(s, set()).add(t)
+        in_p.setdefault(t, set()).add(s)
+
+    def degree(u: str) -> int:
+        return len(out_p.get(u, set()) | in_p.get(u, set()))
+
+    def span(u: str) -> int:
+        """How many distinct communities a user's partners belong to."""
+        parts = out_p.get(u, set()) | in_p.get(u, set())
+        return len({communities[p] for p in parts if p in communities})
+
+    # betweenness centrality — who sits on the paths between groups. Sampled on
+    # large graphs for speed; 0 everywhere if networkx is missing.
+    betw: dict[str, float] = {}
+    try:
+        import networkx as nx
+
+        node_ids = {nid for nid, _, _ in graph.nodes}
+        edge_w: dict[tuple[str, str], int] = {}
+        for (s, t), w in dir_pairs.items():
+            key = tuple(sorted((s, t)))
+            edge_w[key] = edge_w.get(key, 0) + w
+        G = nx.Graph()
+        G.add_nodes_from(node_ids)
+        for (s, t), w in edge_w.items():
+            if s in node_ids and t in node_ids:
+                G.add_edge(s, t, weight=w)
+        if G.number_of_edges():
+            n = G.number_of_nodes()
+            if n > 300:
+                betw = nx.betweenness_centrality(G, k=min(n, 200), seed=42, normalized=True)
+            else:
+                betw = nx.betweenness_centrality(G, normalized=True)
+    except Exception:
+        betw = {}
+
+    active = [uid for uid in rows_by_id if degree(uid) >= 1]
+    deg_p80 = _pct([degree(u) for u in active], 0.80)
+    recv_p75 = _pct([rows_by_id[u]["replies_received"] for u in active], 0.75)
+    sent_p75 = _pct([rows_by_id[u]["replies_sent"] for u in active], 0.75)
+
+    # bridges: top betweenness among well-connected, community-spanning people
+    bridge_cands = sorted(
+        (u for u in active if degree(u) >= 3 and span(u) >= 3 and betw.get(u, 0) > 0),
+        key=lambda u: betw.get(u, 0.0),
+        reverse=True,
+    )
+    bridge_set = set(bridge_cands[:4])
+
+    for uid, r in rows_by_id.items():
+        deg = degree(uid)
+        recv = r["replies_received"]
+        sent_r = r["replies_sent"]
+        r["degree"] = deg
+        r["betweenness"] = round(betw.get(uid, 0.0), 4)
+        if deg == 0:
+            role = "periphery"
+        elif uid in bridge_set:
+            role = "bridge"
+        elif recv >= max(3, recv_p75) and recv >= 1.7 * max(1, sent_r):
+            role = "magnet"
+        elif sent_r >= max(3, sent_p75) and sent_r >= 1.7 * max(1, recv):
+            role = "echo"
+        elif deg >= max(3, deg_p80):
+            role = "connector"
+        elif deg <= 1:
+            role = "periphery"
+        else:
+            role = "regular"
+        r["role"] = role
+
+    # ---- chat-level portrait -------------------------------------------------
+    recvs = [rows_by_id[u]["replies_received"] for u in active]
+    total_recv = sum(recvs)
+    top3 = sum(sorted(recvs, reverse=True)[:3])
+    top3_share = top3 / total_recv if total_recv else 0.0
+    connected = len(active)
+    if connected < 6:
+        central = "small"
+    elif top3_share > 0.55:
+        central = "centralized"
+    elif top3_share < 0.30:
+        central = "distributed"
+    else:
+        central = "mixed"
+
+    csize = Counter(communities.values()) if communities else Counter()
+    ncomm = sum(1 for c in csize.values() if c >= 3)
+
+    def ratio(u: str, a: str, b: str) -> float:
+        return rows_by_id[u][a] / max(1, rows_by_id[u][b])
+
+    anon_prefix = i18n.t("Аноним")
+
+    def pick(cands: list[str], by: str) -> str | None:
+        """Highest-volume exemplar, preferring a named account over an anonymous
+        one (anon is shown only when there's no named candidate)."""
+        if not cands:
+            return None
+        ordered = sorted(cands, key=lambda u: rows_by_id[u][by], reverse=True)
+        named = [u for u in ordered if not rows_by_id[u]["user"].startswith(anon_prefix)]
+        return (named or ordered)[0]
+
+    # magnet / ignored are picked by absolute volume (a real attention sink draws
+    # *many* replies, not just a lopsided ratio) and kept distinct from the
+    # bridges so the portrait names different people.
+    mags = [u for u in active if u not in bridge_set
+            and rows_by_id[u]["replies_received"] >= max(5, recv_p75)
+            and rows_by_id[u]["replies_received"] >= 1.7 * max(1, rows_by_id[u]["replies_sent"])]
+    mu = pick(mags, "replies_received")
+    magnet = {"name": rows_by_id[mu]["user"], "ratio": round(ratio(mu, "replies_received", "replies_sent"), 1)} if mu else None
+
+    igs = [u for u in active if u not in bridge_set
+           and rows_by_id[u]["replies_sent"] >= max(5, sent_p75)
+           and rows_by_id[u]["replies_sent"] >= 1.7 * max(1, rows_by_id[u]["replies_received"])]
+    iu = pick(igs, "replies_sent")
+    ignored = {"name": rows_by_id[iu]["user"], "ratio": round(ratio(iu, "replies_sent", "replies_received"), 1)} if iu else None
+
+    hub = None
+    if active:
+        u = max(active, key=degree)
+        hub = {"name": rows_by_id[u]["user"], "degree": degree(u)}
+
+    portrait = {
+        "participants": len(rows_by_id),
+        "connected": connected,
+        "communities": ncomm,
+        "centralization": central,
+        "top3_share": round(top3_share, 2),
+        "bridges": [rows_by_id[u]["user"] for u in bridge_cands[:3]],
+        "magnet": magnet,
+        "ignored": ignored,
+        "hub": hub,
+    }
+    return portrait

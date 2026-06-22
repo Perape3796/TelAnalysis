@@ -143,12 +143,27 @@ export interface InteractionRow {
   sent: number
   replies_sent: number
   replies_received: number
+  role?: string
+  degree?: number
+  betweenness?: number
+}
+export interface Portrait {
+  participants: number
+  connected: number
+  communities: number
+  centralization: "centralized" | "mixed" | "distributed" | "small"
+  top3_share: number
+  bridges: string[]
+  magnet: { name: string; ratio: number } | null
+  ignored: { name: string; ratio: number } | null
+  hub: { name: string; degree: number } | null
 }
 export interface GraphResult {
   nodes: [string, string, number][]
   edges: [string, string, string][]
   communities: Record<string, number>
   summary: InteractionRow[]
+  portrait?: Portrait
 }
 export interface ChainStats {
   max_depth: number
