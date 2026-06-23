@@ -9,13 +9,16 @@ import {
   Flame,
   FolderCog,
   FolderOpen,
+  Image as ImageIcon,
   Link2,
+  MessageSquare,
   Mic,
   MoonStar,
   MoreVertical,
   Reply,
   Smile,
   Sparkles,
+  Users,
   type LucideIcon,
 } from "lucide-react"
 
@@ -29,6 +32,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Skeleton } from "@/components/ui/skeleton"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { TabLoading } from "@/components/loading"
+import { Stat } from "@/components/stat"
 import { Onboarding } from "@/Onboarding"
 
 // Tabs are lazy: the heavy charting libs (ECharts) load only when a chart-bearing
@@ -376,25 +380,35 @@ function SummaryCard({
   hero,
   kpis,
   voiceSeconds,
-  annivLine,
+  annivBits,
   compact = false,
 }: {
   hero: Hero
   kpis: Kpis
   voiceSeconds?: number
-  annivLine?: string
+  annivBits?: string[]
   // slim identity bar (title + figures only) for non-overview tabs, so the full
   // narrative poster isn't repeated above every view
   compact?: boolean
 }) {
   const { t } = useTranslation()
   const figures = [
-    { label: t("messages"), value: fmtInt(kpis.total_messages) },
-    { label: t("daysActive"), value: fmtInt(kpis.active_days) },
-    { label: participantWord(kpis.unique_users), value: fmtInt(kpis.unique_users) },
-    { label: t("media"), value: fmtInt(kpis.media_messages) },
+    { label: t("messages"), value: fmtInt(kpis.total_messages), icon: MessageSquare },
+    { label: t("daysActive"), value: fmtInt(kpis.active_days), icon: CalendarCheck },
+    { label: participantWord(kpis.unique_users), value: fmtInt(kpis.unique_users), icon: Users },
+    { label: t("media"), value: fmtInt(kpis.media_messages), icon: ImageIcon },
   ]
-  if (voiceSeconds && voiceSeconds > 0) figures.push({ label: t("voice"), value: humanizeDuration(voiceSeconds) })
+  if (voiceSeconds && voiceSeconds > 0) figures.push({ label: t("voice"), value: humanizeDuration(voiceSeconds), icon: Mic })
+
+  // Date range for the eyebrow, humanised in the active locale ("Jan 13 – May 30,
+  // 2026"). Falls back silently when the chat has no dated messages.
+  const locale = i18n.language === "ru" ? "ru-RU" : "en-US"
+  const fmtDate = (s: string) => {
+    const d = new Date(s)
+    return Number.isNaN(d.getTime()) ? s : d.toLocaleDateString(locale, { day: "numeric", month: "short", year: "numeric" })
+  }
+  const dateRange = kpis.first_date && kpis.last_date ? `${fmtDate(kpis.first_date)} – ${fmtDate(kpis.last_date)}` : null
+  const eyebrow = [chatTypeLabel(hero.chat_type), dateRange].filter(Boolean).join("  ·  ")
 
   if (compact) {
     return (
@@ -425,26 +439,33 @@ function SummaryCard({
           without a loud full-card gradient */}
       <div aria-hidden className="pointer-events-none absolute -right-28 -top-28 size-72 rounded-full bg-primary/10 blur-3xl" />
       <div className="relative">
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
-          <h1 className="text-3xl font-bold tracking-tight sm:text-4xl">{hero.title}</h1>
-          <span className="rounded-full border border-border bg-muted/40 px-2.5 py-0.5 text-xs font-medium text-muted-foreground">
-            {chatTypeLabel(hero.chat_type)}
-          </span>
-        </div>
+        {/* eyebrow: chat type + date range — the context that used to sit in a
+            muted meta line below, lifted above the title where dashboards put it */}
+        {eyebrow && (
+          <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{eyebrow}</div>
+        )}
+        <h1 className="mt-1.5 text-3xl font-bold tracking-tight sm:text-4xl">{hero.title}</h1>
         <p
-          className="mt-3 max-w-3xl text-base leading-relaxed text-foreground [&_b]:font-semibold [&_b]:text-primary"
+          className="mt-2.5 max-w-3xl text-base leading-relaxed text-foreground [&_b]:font-semibold [&_b]:text-primary"
           dangerouslySetInnerHTML={{ __html: hero.prose_html }}
         />
-        <div className="mt-2 text-sm text-muted-foreground">{hero.meta}</div>
-        {annivLine && <div className="mt-1 text-sm text-muted-foreground">{annivLine}</div>}
-        <div className="mt-6 grid grid-cols-2 gap-x-8 gap-y-4 border-t border-border/70 pt-5 sm:grid-cols-3 lg:flex lg:flex-wrap lg:gap-x-12">
+        <div className="mt-6 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
           {figures.map((f) => (
-            <div key={f.label}>
-              <div className="text-2xl font-semibold tabular-nums sm:text-3xl">{f.value}</div>
-              <div className="mt-0.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">{f.label}</div>
-            </div>
+            <Stat key={f.label} icon={f.icon} label={f.label} value={f.value} className="bg-background/40" />
           ))}
         </div>
+        {annivBits && annivBits.length > 0 && (
+          <div className="mt-4 flex flex-wrap gap-2">
+            {annivBits.map((b) => (
+              <span
+                key={b}
+                className="rounded-full border border-border bg-muted/40 px-3 py-1 text-xs font-medium text-muted-foreground"
+              >
+                {b}
+              </span>
+            ))}
+          </div>
+        )}
       </div>
     </Card>
   )
@@ -553,9 +574,9 @@ export default function App() {
   const annivQ = useQuery({ queryKey: ["anniv", path, sel, from, to, lang], queryFn: () => api.anniversaries(path!, period), enabled: !!sel && !inManager })
   const isHtml = !!chatsQ.data && chatsQ.data.source !== "json"
 
-  // One-line relationship recap for the summary card: "N days together · crossed
-  // <milestone> on <date> · <milestone> in M days".
-  const annivLine = (() => {
+  // Relationship recap chips for the summary card: ["N days together", "crossed
+  // <milestone> on <date>", "<milestone> in M days"] — rendered as pills.
+  const annivBits = (() => {
     const a = annivQ.data
     if (!a || a.days_since_start <= 0) return undefined
     const lastCrossed = [...(a.crossed_counts ?? []), ...(a.crossed_days ?? [])]
@@ -565,7 +586,7 @@ export default function App() {
     bits.push(t("annivBase", { days: fmtInt(a.days_since_start), w: dayWord(a.days_since_start) }))
     if (lastCrossed) bits.push(t("annivCrossed", { label: lastCrossed.label, date: lastCrossed.when }))
     if (a.upcoming_day) bits.push(t("annivUpcoming", { label: a.upcoming_day.label, n: fmtInt(a.upcoming_day.days_until ?? 0) }))
-    return bits.join(" · ")
+    return bits
   })()
 
   // available tabs for this chat type; reset active tab if it vanished.
@@ -671,7 +692,7 @@ export default function App() {
                 hero={heroQ.data}
                 kpis={kpisQ.data}
                 voiceSeconds={mediaQ.data?.voice_total_seconds}
-                annivLine={annivLine}
+                annivBits={annivBits}
                 compact={tab !== "overview"}
               />
             ) : (

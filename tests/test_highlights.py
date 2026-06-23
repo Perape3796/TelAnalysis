@@ -42,17 +42,18 @@ def test_build_hero_includes_count_and_avg():
     assert "100 дней" in hero.prose_html
 
 
-def test_build_hero_mentions_peak_day_in_genitive_month():
-    """Date phrasing should use genitive case ('8 марта'), not prepositional."""
+def test_build_hero_prose_is_recap_only():
+    """Prose is the one-line recap; peak day / hour / silence live as their own
+    Highlight cards, so they must NOT be repeated in the hero paragraph."""
     hero = highlights.build_hero(
         chat_name="Test",
-        kpis=_kpis(),
+        kpis=_kpis(total_messages=23_000, days_active=100),
         per_day=[("2024-03-08", 999)],
         grid=_make_grid(0, 12, 1),
     )
-    assert "8 марта" in hero.prose_html
-    assert "8 марте" not in hero.prose_html  # prep case would be wrong here
-    assert "999" in hero.prose_html
+    assert "23 000" in hero.prose_html  # the recap is present
+    assert "8 март" not in hero.prose_html  # but the loudest-day sentence is gone
+    assert "999" not in hero.prose_html
 
 
 def test_build_hero_handles_empty_data():

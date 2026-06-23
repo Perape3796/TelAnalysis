@@ -88,45 +88,11 @@ def build_hero(
             )
         )
 
-    peak = _peak_day(per_day)
-    if peak and peak[1] > 0:
-        d_iso, n = peak
-        try:
-            dt = datetime.fromisoformat(d_iso)
-            day_str = i18n.format_day(dt.date())
-        except (ValueError, IndexError):
-            day_str = d_iso
-        parts.append(
-            i18n.t("Самый шумный день — {date}, {messages} за сутки.").format(
-                date=day_str,
-                messages=i18n.n_messages(n),
-            )
-        )
-
-    peak_hw = _peak_hour_weekday(grid)
-    if peak_hw is not None:
-        wd, h, _ = peak_hw
-        parts.append(
-            i18n.t("Чаще всего пишут в {weekday} около {hour}.").format(
-                weekday=i18n.weekday_name(wd),
-                hour=i18n.hour_to_human(h),
-            )
-        )
-
-    if streaks is not None and streaks.longest_silences:
-        gap_start, gap_end, days = streaks.longest_silences[0]
-        try:
-            dt = datetime.fromisoformat(gap_start)
-            when = i18n.format_month_year(dt.date())
-        except (ValueError, IndexError):
-            when = gap_start
-        parts.append(
-            i18n.t("Самое долгое молчание — {days} в {when}.").format(
-                days=i18n.n_days(days),
-                when=when,
-            )
-        )
-
+    # Peak day / peak hour / longest silence used to be narrated here as well,
+    # but each is now shown as its own Highlight card right below the hero — so
+    # the prose stays a single-line recap instead of repeating those facts in
+    # words. (per_day / grid / streaks are kept on the signature for callers and
+    # because top_highlights consumes the same inputs.)
     if not parts:
         prose = i18n.t("Нет дат у сообщений — анализ ограничен.")
     else:
